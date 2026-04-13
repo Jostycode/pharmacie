@@ -14,6 +14,8 @@ function ExamenCRUD() {
   const [valeursDefaut, setValeursDefaut] = useState("");
   const [prix, setPrix] = useState("");
   const [resultat, setResultat] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [tempExamen, setTempExamen] = useState(null);
 
   const [searchBilan, setSearchBilan] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -197,13 +199,29 @@ function ExamenCRUD() {
               .filter(ex => ex.categorie !== 'BILAN' && ex.nom_examen.toLowerCase().includes(searchBilan.toLowerCase()))
               .map(ex => (
                 <div className="col-md-4" key={ex.id_examen}>
+                  // Dans le map des examens (isBilanMode)
                   <div 
                     className={`p-2 border rounded small d-flex align-items-center justify-content-between ${examensInclus.includes(ex.id_examen) ? 'bg-success text-white' : 'bg-white'}`}
                     style={{ cursor: 'pointer' }}
                     onClick={() => {
-                      setExamensInclus(prev => 
-                        prev.includes(ex.id_examen) ? prev.filter(id => id !== ex.id_examen) : [...prev, ex.id_examen]
-                      );
+                      if (examensInclus.includes(ex.id_examen)) {
+                        // Si on décoche, on retire l'ID et on nettoie les sous-catégories liées si besoin
+                        setExamensInclus(prev => prev.filter(id => id !== ex.id_examen));
+                      } else {
+                        // Si on coche :
+                        setExamensInclus(prev => [...prev, ex.id_examen]);
+                        // S'il y a plusieurs sous-catégories, on ouvre le modal pour choisir
+                        if (ex.sous_categories && ex.sous_categories.includes(',')) {
+                          setTempExamen(ex);
+                          setShowModal(true);
+                        } else if (ex.sous_categories) {
+                          // S'il n'y en a qu'une, on l'ajoute directement sans modal
+                          setSousCategories(prev => {
+                            const list = prev ? prev.split(',').map(s => s.trim()) : [];
+                            return [...new Set([...list, ex.sous_categories.trim()])].join(', ');
+                          });
+                        }
+                      }
                     }}
                   >
                     <span className="text-truncate">{ex.nom_examen}</span>
@@ -375,6 +393,46 @@ function ExamenCRUD() {
           </tbody>
         </table>
       </div>
+      {showModal && (
+      <div className="modal d-block" style={{backgroundColor: 'rgba(0,0,0,0.5)'}}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header bg-success text-white">
+              <h5 className="modal-title">Sous-catégorie pour {tempExamen?.nom_examen}</h5>
+            </div>
+            <div className="modal-body">
+              <p className="small text-muted">Choisissez la section de ce bilan où cet examen doit apparaître :</p>
+              {tempExamen?.sous_categories?.split(',').map((sc, index) => (
+                <div key={index} className="form-check mb-2">
+                  <input 
+                    className="form-check-input" 
+                    type="checkbox" 
+                    id={`sc-${index}`}
+                    checked={sousCategories.includes(sc.trim())}
+                    onChange={(e) => {
+                      const val = sc.trim();
+                      let updated = sousCategories ? sousCategories.split(',').map(s => s.trim()) : [];
+                      if (e.target.checked) {
+                        updated = [...new Set([...updated, val])];
+                      } else {
+                        updated = updated.filter(s => s !== val);
+                      }
+                      setSousCategories(updated.join(', '));
+                    }}
+                  />
+                  <label className="form-check-label" htmlFor={`sc-${index}`}>{sc.trim()}</label>
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-success w-100" onClick={() => {setShowModal(false); setTempExamen(null);}}>
+                Valider pour le bilan
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
 );
 }
