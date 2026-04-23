@@ -133,46 +133,69 @@ function DemandeExamen() {
     setIsEditing(true);
     setEditingId(demande.id_demande);
     
-    // On retrouve le patient
+    // 1. Trouver le patient
     const p = patients.find(pat => pat.id_patient === demande.id_patient);
-    setSelectedPatient(p);
-    setMedecin(demande.medecin);
+    if (p) {
+      setSelectedPatient(p);
+      setSearchPatient(`${p.nom} ${p.prenom}`); // CRUCIAL : Remplir le champ de recherche
+      
+      // Remplir les constantes si elles existent dans l'objet demande ou patient
+      setConstantes({
+        poids: p.poids || "", 
+        tension: p.tension || "",
+        temperature: p.temperature || "", 
+        age: p.age || "", 
+        saturation: p.saturation || ""
+      });
+    }
 
-    // On récupère les examens actuels ager cocher les cases
+    setMedecin(demande.medecin || "");
+
+    // 2. Récupérer les examens cochés
     try {
       const res = await axios.get(`http://localhost:3000/api/demande_examen1/lignes/${demande.id_demande}`);
       setExamensChoisis(res.data.map(l => l.id_examen));
-      // On remonte en haut de page ager voir le formulaire
+      
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error("Erreur récup examens pour modif:", err); 
+    }
   };
 
   // Enregistrer (Création OU Modification)
   const enregistrerDemande = async () => {
-    if (!selectedPatient || examensChoisis.length === 0) return alert("Données manquantes");
+    if (!selectedPatient || examensChoisis.length === 0) {
+      return alert("Veuillez sélectionner un patient et au moins un examen.");
+    }
     
     try {
+      const payload = {
+        id_patient: selectedPatient.id_patient,
+        medecin,
+        examens: examensChoisis,
+        interpretation: "" // On envoie une chaîne vide par défaut
+      };
+
       if (isEditing) {
-        await axios.put(`http://localhost:3000/api/demande_examen1/update/${editingId}`, {
-          medecin, examens: examensChoisis
-        });
-        alert("Demande mise à jour !");
+        await axios.put(`http://localhost:3000/api/demande_examen1/update/${editingId}`, payload);
+        alert("Demande mise à jour avec succès !");
       } else {
-        await axios.post("http://localhost:3000/api/demande_examen1/post1", {
-          id_patient: selectedPatient.id_patient,
-          medecin, constantes, examens: examensChoisis
-        });
-        alert("Demande enregistrée !");
+        await axios.post("http://localhost:3000/api/demande_examen1/post1", payload);
+        alert("Nouvelle demande enregistrée !");
       }
       
-      // Reset total
+      // --- RESET COMPLET ---
       setIsEditing(false);
       setEditingId(null);
       setExamensChoisis([]);
       setMedecin("");
+      setSearchPatient(""); // Vider le champ de recherche
       setSelectedPatient(null);
-      fetchData();
-    } catch (err) { alert("Erreur serveur"); }
+      fetchData(); // Rafraîchir la liste
+    } catch (err) { 
+      console.error(err);
+      alert("Erreur lors de l'enregistrement : " + (err.response?.data?.error || err.message)); 
+    }
   };
 
   return (
@@ -191,16 +214,16 @@ function DemandeExamen() {
                 type="text"
                 className="form-control shadow-sm border-start-0"
                 placeholder="Taper le nom du patient..."
-                // On affiche le nom si sélectionné, sinon ce que l'utilisateur tape
-                value={selectedPatient ? `${selectedPatient.nom} ${selectedPatient.prenom}` : searchPatient}
+                // On utilise searchPatient en priorité pour la saisie
+                value={searchPatient} 
                 onChange={(e) => {
                   const val = e.target.value;
                   setSearchPatient(val);
-                  // Important : Ne mettre à null QUE si la valeur est différente du nom sélectionné
+                  setShowPatientList(true);
+                  // Si l'utilisateur efface, on déselectionne le patient
                   if (selectedPatient && val !== `${selectedPatient.nom} ${selectedPatient.prenom}`) {
                     setSelectedPatient(null);
                   }
-                  setShowPatientList(true);
                 }}
                 onFocus={() => setShowPatientList(true)}
               />

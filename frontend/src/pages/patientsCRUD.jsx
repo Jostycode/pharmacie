@@ -120,27 +120,29 @@ function PatientsCRUD() {
   const submit = async (e) => {
     e.preventDefault();
     
-    // On s'assure que le payload correspond exactement aux variables du backend
+    // On n'envoie que ce qui est défini dans tes variables d'état (useState)
     const payload = { 
       nom, 
       prenom, 
       sexe, 
       telephone, 
       abonne: idAbonnement || "non", 
-      consultation: idConsultation // On envoie le texte directement
+      consultation: idConsultation 
     };
 
     try {
       if (editId) {
-        await axios.put(`http://localhost:3000/api/patient/${editId}`, payload);
+        // Utilise l'URL complète avec /update/
+        await axios.put(`http://localhost:3000/api/patient/update/${editId}`, payload);
       } else {
         await axios.post("http://localhost:3000/api/patient/post", payload);
       }
       resetForm();
       loadPatients();
-      alert("Patient enregistré avec succès !");
+      alert("Opération réussie !");
     } catch (error) { 
-      console.error("Erreur envoi", error.response?.data || error.message); 
+      console.error("Erreur envoi", error.response?.data || error.message);
+      alert("Erreur lors de l'enregistrement : " + (error.response?.data?.error || error.message));
     }
   };
 

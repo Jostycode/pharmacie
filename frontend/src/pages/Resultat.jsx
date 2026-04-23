@@ -1,27 +1,31 @@
 import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 
-function ResultatExamen (){
+function ResultatExamen() {
   // États pour les listes
   const [examensEnAttente, setExamensEnAttente] = useState([]);
   const [historique, setHistorique] = useState([]);
-  
-  // États pour le formulaire et filtres
+
+  // États pour le formulaire
   const [selectedExamen, setSelectedExamen] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [search, setSearch] = useState("");
   const [formData, setFormData] = useState({
     parametres: [],
     seroData: { resultat: "", titre: "", valeur: "", interpretation: "" }
   });
 
-  // États de filtrage (Backend)
-  const [filtreDate, setFiltreDate] = useState("tous"); 
+  // États de filtrage HISTORIQUE (Droite)
+  const [filtreDate, setFiltreDate] = useState("tous");
   const [dateSelectionnee, setDateSelectionnee] = useState("");
+  const [searchHistorique, setSearchHistorique] = useState("");
+
+  // États de filtrage ATTENTE (Gauche)
+  const [filtreDateAttente, setFiltreDateAttente] = useState("tous");
+  const [dateAttentePrecise, setDateAttentePrecise] = useState(""); // ÉTAIT MANQUANT
+  const [searchAttente, setSearchAttente] = useState("");
 
   const API_URL = "http://localhost:3000/api/resultats";
 
-  // Rafraîchir les données quand les filtres changent
   useEffect(() => {
     refreshData();
   }, [filtreDate, dateSelectionnee]);
@@ -31,7 +35,7 @@ function ResultatExamen (){
       const params = { filtre: filtreDate, datePrecise: dateSelectionnee };
       const [attente, effectues] = await Promise.all([
         axios.get(`${API_URL}/en_attente`),
-        axios.get(`${API_URL}/effectues`, { params }) 
+        axios.get(`${API_URL}/effectues`, { params })
       ]);
       setExamensEnAttente(attente.data);
       setHistorique(effectues.data);
@@ -40,11 +44,10 @@ function ResultatExamen (){
     }
   };
 
-  // --- LOGIQUE DE SELECTION ---
   const handleSelect = (examen) => {
     setSelectedExamen(examen);
     setIsEditing(false);
-    
+
     if (examen.categorie.toUpperCase().includes("BIOCHIMIE")) {
       const params = (examen.parametre || "").split(",").map(p => ({
         parametre: p.trim(),
@@ -54,14 +57,13 @@ function ResultatExamen (){
       }));
       setFormData({ ...formData, parametres: params });
     } else {
-      setFormData({ 
-        ...formData, 
-        seroData: { resultat: "", titre: examen.nom_examen, valeur: "", interpretation: "" } 
+      setFormData({
+        ...formData,
+        seroData: { resultat: "", titre: examen.nom_examen, valeur: "", interpretation: "" }
       });
     }
   };
 
-  // --- ENREGISTREMENT / MODIFICATION ---
   const soumettreResultat = async (e) => {
     e.preventDefault();
     try {
@@ -75,10 +77,8 @@ function ResultatExamen (){
       };
 
       if (isEditing) {
-        // Option 1: Appel PUT (si route créée)
         await axios.put(`${API_URL}/${selectedExamen.id_resultat}`, payload);
       } else {
-        // Option 2: Appel POST
         await axios.post(API_URL, payload);
       }
 
@@ -100,7 +100,7 @@ function ResultatExamen (){
       });
 
       const res = await axios.get(`${API_URL}/details/${h.id_resultat}`);
-      
+
       if (res.data.type === "BIOCHIMIE") {
         const params = res.data.data.map(p => ({
           parametre: p.nom_parametre,
@@ -112,7 +112,6 @@ function ResultatExamen (){
       } else {
         setFormData({ ...formData, seroData: res.data.data[0] });
       }
-      
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       alert("Erreur lors de la récupération des détails.");
@@ -126,30 +125,67 @@ function ResultatExamen (){
     }
   };
 
-  // --- RECHERCHE FILTRÉE (Textuelle uniquement, la date est gérée par le serveur) ---
+  // --- LOGIQUE FILTRAGE GAUCHE (Attente) ---
+  const attenteFiltre = useMemo(() => {
+    return examensEnAttente.filter(ex => {
+      const matchSearch = `${ex.nom} ${ex.prenom} ${ex.nom_examen}`.toLowerCase().includes(searchAttente.toLowerCase());
+      const dateDemande = new Date(ex.date_demande).toLocaleDateString('en-CA');
+      const aujourdhui = new Date().toLocaleDateString('en-CA');
+
+      let matchDate = true;
+      if (filtreDateAttente === "aujourdhui") {
+        matchDate = dateDemande === aujourdhui;
+      } else if (filtreDateAttente === "precis" && dateAttentePrecise) {
+        matchDate = dateDemande === dateAttentePrecise;
+      }
+      return matchSearch && matchDate;
+    });
+  }, [examensEnAttente, searchAttente, filtreDateAttente, dateAttentePrecise]);
+
+  // --- LOGIQUE FILTRAGE DROITE (Historique) ---
   const historiqueFiltre = useMemo(() => {
-    return historique.filter(h => 
-      `${h.nom_patient} ${h.prenom_patient} ${h.nom_examen}`.toLowerCase().includes(search.toLowerCase())
+    return historique.filter(h =>
+      `${h.nom_patient} ${h.prenom_patient} ${h.nom_examen}`.toLowerCase().includes(searchHistorique.toLowerCase())
     );
-  }, [historique, search]);
+  }, [historique, searchHistorique]);
 
   return (
     <div className="container-fluid p-4">
       <div className="row">
-        
-        {/* COLONNE GAUCHE : EN ATTENTE */}
+        {/* COLONNE GAUCHE */}
         <div className="col-md-4">
           <div className="card shadow-sm border-0 mb-4">
-            <div className="card-header bg-warning text-dark fw-bold">⌛ Examens en attente</div>
-            <div className="list-group list-group-flush" style={{maxHeight: '400px', overflowY: 'auto'}}>
-              {examensEnAttente.map((ex, i) => (
-                <button 
-                  key={i} 
-                  className={`list-group-item list-group-item-action ${selectedExamen?.id_ligne === ex.id_ligne ? 'active' : ''}`}
-                  onClick={() => handleSelect(ex)}
-                >
+            <div className="card-header bg-warning text-dark fw-bold">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span>⌛ En attente</span>
+                <span className="badge bg-dark">{attenteFiltre.length}</span>
+              </div>
+              <div className="row g-1">
+                <div className="col-6">
+                  <select className="form-select form-select-sm" value={filtreDateAttente} onChange={(e) => setFiltreDateAttente(e.target.value)}>
+                    <option value="tous">Toutes dates</option>
+                    <option value="aujourdhui">Aujourd'hui</option>
+                    <option value="precis">Jour précis...</option>
+                  </select>
+                </div>
+                <div className="col-6">
+                  {filtreDateAttente === "precis" ? (
+                    <input type="date" className="form-control form-control-sm" onChange={(e) => setDateAttentePrecise(e.target.value)} />
+                  ) : (
+                    <input type="text" className="form-control form-control-sm" placeholder="🔍 Rechercher..." value={searchAttente} onChange={(e) => setSearchAttente(e.target.value)} />
+                  )}
+                </div>
+              </div>
+              {filtreDateAttente === "precis" && (
+                <input type="text" className="form-control form-control-sm mt-1" placeholder="🔍 Filtrer par nom..." value={searchAttente} onChange={(e) => setSearchAttente(e.target.value)} />
+              )}
+            </div>
+
+            <div className="list-group list-group-flush" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+              {attenteFiltre.map((ex, i) => (
+                <button key={i} className={`list-group-item list-group-item-action ${selectedExamen?.id_ligne === ex.id_ligne ? 'active' : ''}`} onClick={() => handleSelect(ex)}>
                   <div className="d-flex justify-content-between">
-                    <strong>{ex.nom} {ex.prenom}</strong>
+                    <strong className="text-truncate">{ex.nom} {ex.prenom}</strong>
                     <small>{new Date(ex.date_demande).toLocaleDateString()}</small>
                   </div>
                   <small className="d-block text-uppercase">{ex.nom_examen}</small>
@@ -159,6 +195,7 @@ function ResultatExamen (){
           </div>
         </div>
 
+        {/* COLONNE DROITE */}
         {/* COLONNE DROITE : FORMULAIRE ET HISTORIQUE */}
         <div className="col-md-8">
           {selectedExamen ? (
@@ -269,6 +306,6 @@ function ResultatExamen (){
       </div>
     </div>
   );
-};
+}
 
 export default ResultatExamen;

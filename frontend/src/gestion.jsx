@@ -12,6 +12,7 @@ import DemandeExamen from "./pages/DemandeExamen";
 import DemandeExamen1 from "./pages/DemandeExamen1";
 import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
+import Caisse from "./pages/caisse";
 
 function Gestion() {
   const [activePage, setActivePage] = useState("dashboard");
@@ -45,6 +46,8 @@ function Gestion() {
         return <ListeResultatsGroupes />;
       case "abonnement":
         return <Abonnement />;
+      case "caisse":
+        return <Caisse />;
       default:
         return <h2>Dashboard labo</h2>;
     }
@@ -167,6 +170,14 @@ function Gestion() {
               className="nav-link text-white btn btn-link"
             >
               Abonnement
+            </button>
+          </li>
+          <li>
+            <button
+              onClick={() => setActivePage("caisse")}
+              className="nav-link text-white btn btn-link"
+            >
+              Caisse
             </button>
           </li>
         </ul>

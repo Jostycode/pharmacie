@@ -4,55 +4,63 @@ const pool = require("../db");
  
 // --- CRÉATION (POST) ---
 router.post("/post", async (req, res) => {
-  const { nom, prenom, sexe, telephone, abonne, consultation } = req.body;
+  const { nom, prenom, telephone, consultation, sexe } = req.body;
+
   try {
-    const r = await pool.query(`
-      INSERT INTO patient(nom, prenom, sexe, telephone, abonne, consultation)
-      VALUES($1, $2, $3, $4, $5, $6)
-      RETURNING *
-    `, [
-      nom,
-      prenom || 'Non renseigné',
-      sexe || 'Non précisé',
-      telephone || '00000000',
-      abonne || 'non',
-      consultation || 'Généraliste' // Valeur par défaut si vide
-    ]);
-    res.json(r.rows[0]);
+    // 1. Calcul du prix
+    const priceRes = await pool.query(
+      "SELECT prix FROM consultation WHERE LOWER(nom_consul) = LOWER($1)",
+      [consultation]
+    );
+    const montantConsultation = priceRes.rows.length > 0 ? priceRes.rows[0].prix : 0;
+
+    // 2. Insertion (On ne liste que les colonnes fournies, la DB gère le reste)
+    const result = await pool.query(
+      `INSERT INTO patient (nom, prenom, telephone, consultation, sexe, montant) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [nom, prenom, telephone, consultation, sexe, montantConsultation]
+    );
+
+    res.json(result.rows[0]);
   } catch (err) {
+    console.error("Erreur DB POST:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // --- MISE À JOUR (PUT) ---
-router.put("/:id", async (req, res) => {
-  const { nom, prenom, sexe, telephone, abonne, consultation } = req.body;
+router.put("/update/:id", async (req, res) => {
+  const { id } = req.params;
+  // On définit des valeurs par défaut pour éviter le plantage si le front ne les envoie pas
+  const { 
+    nom, prenom, telephone, consultation, sexe,
+    age = 0, poids = "0", tension = "N/A", 
+    temperature = "N/A", saturation = "N/A" 
+  } = req.body;
+
   try {
-    const r = await pool.query(`
-      UPDATE patient
-      SET nom=$1,
-          prenom=$2,
-          sexe=$3,
-          telephone=$4,
-          abonne=$5,
-          consultation=$6  -- Virgule supprimée ici
-      WHERE id_patient=$7
-      RETURNING *
-    `, [
-      nom,
-      prenom,
-      sexe,
-      telephone,
-      abonne || 'non',
-      consultation || 'Non renseigné',
-      req.params.id
-    ]);
-    res.json(r.rows[0]);
+    // 1. Recalculer le prix
+    const priceRes = await pool.query(
+      "SELECT prix FROM consultation WHERE LOWER(nom_consul) = LOWER($1)",
+      [consultation]
+    );
+    const nouveauMontant = priceRes.rows.length > 0 ? priceRes.rows[0].prix : 0;
+
+    // 2. Mettre à jour
+    await pool.query(
+      `UPDATE patient SET 
+       nom=$1, prenom=$2, telephone=$3, consultation=$4, age=$5, sexe=$6, 
+       poids=$7, tension=$8, temperature=$9, saturation=$10, montant=$11 
+       WHERE id_patient=$12`,
+      [nom, prenom, telephone, consultation, age, sexe, poids, tension, temperature, saturation, nouveauMontant, id]
+    );
+
+    res.json({ message: "Patient mis à jour avec succès" });
   } catch (err) {
+    console.error("Erreur DB PUT:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 /// READ ALL
 router.get("/", async (req, res) => {
   const r = await pool.query(`SELECT * FROM patient ORDER BY date_creation DESC`);
@@ -80,8 +88,6 @@ router.patch("/archive/:id", async (req, res) => {
   }
 });
 
-// --- 2. SUPPRESSION DÉFINITIVE (Nettoyage complet) ---
-// On utilise une transaction pour supprimer les résultats, les lignes, les demandes, puis le patient.
 router.delete("/full-delete/:id", async (req, res) => {
   const client = await pool.connect();
   try {

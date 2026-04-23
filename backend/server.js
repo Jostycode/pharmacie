@@ -27,6 +27,7 @@ app.use("/api/demande_examen1", require("./routes/demande_examen1"));
 app.use("/api/resultats", require("./routes/resultat"));
 app.use("/api/utilisateur", require("./routes/utilisateur"));
 app.use("/api/abonnement", require("./routes/abonnement"));
+app.use("/api/caisse", require("./routes/caisse"));
 // app.use("/api/connexion", require("./routes/auth"));
 
 server.listen(3000, () => console.log("Serveur lancé"));
