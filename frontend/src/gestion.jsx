@@ -7,12 +7,14 @@ import LaboDemandes from "./pages/LaboDemandes";
 import Dashboard from "./pages/dashboard";
 import Abonnement from "./pages/abonnement";
 import Inscription from "./inscription";
+import Login from "./login";
 import Parameteur from "./pages/parameteur";
 import DemandeExamen from "./pages/DemandeExamen";
 import DemandeExamen1 from "./pages/DemandeExamen1";
 import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
 import Caisse from "./pages/caisse";
+import Inscription1 from "./inscription1";
 
 function Gestion() {
   const [activePage, setActivePage] = useState("dashboard");
@@ -24,6 +26,10 @@ function Gestion() {
         return <Dashboard />;
       case "utilisateurs":
         return <Inscription />;
+      case "utilisateurs1":
+        return <Inscription1 />;
+      case "login":
+        return <Login />;
       case "consultation":
         return <Consultation />;
       case "patients":
@@ -56,7 +62,7 @@ function Gestion() {
   return (
     <div className="d-flex">
       <button
-        className="btn btn-primary d-md-none m-2"
+        className="btn btn-primary d-md-none m-2 no-print"
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
       >
         ☰
@@ -65,10 +71,10 @@ function Gestion() {
       <div
         className={`bg-dark text-white p-3 vh-100 ${
           isSidebarOpen ? "d-block" : "d-none"
-        } d-md-block`}
+        } d-md-block no-print`}
         style={{ width: "250px" }}
       >
-        <h4 className="text-center mb-4">LABO</h4>
+        <h4 className="text-center mb-3">LABO</h4>
 
         <ul className="nav flex-column">
           <li>
@@ -162,6 +168,24 @@ function Gestion() {
               className="nav-link text-white btn btn-link"
             >
               Utilisateurs
+            </button>
+          </li>
+
+          <li>
+            <button
+              onClick={() => setActivePage("utilisateurs")}
+              className="nav-link text-white btn btn-link"
+            >
+              Utilisateurs1
+            </button>
+          </li>
+
+          <li>
+            <button
+              onClick={() => setActivePage("login")}
+              className="nav-link text-white btn btn-link"
+            >
+              Login
             </button>
           </li>
           <li>

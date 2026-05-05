@@ -47,8 +47,7 @@ function ExamenCRUD() {
     let result = Array.isArray(data) ? data.filter((item) => {
       const matchSearch = item.nom_examen?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCat = filterCategorie === "tous" || item.categorie === filterCategorie;
-      const matchActif = item.est_actif !== false;
-      return matchSearch && matchCat && matchActif;
+      return matchSearch && matchCat; // On ne filtre plus sur est_actif ici
     }) : [];
 
     result.sort((a, b) => {
@@ -130,12 +129,14 @@ function ExamenCRUD() {
   };
 
   // --- FONCTIONS DE SUPPRESSION ADAPTÉES ---
-  const handleArchive = async (id) => {
-    if (window.confirm("Archiver cet examen ?")) {
-      try {
-        await axios.patch(`http://localhost:3000/api/examen/archive/${id}`);
-        loadExamens();
-      } catch (error) { alert("Erreur d'archivage"); }
+  const toggleArchive = async (id, actuelStatut) => {
+    try {
+      await axios.patch(`http://localhost:3000/api/examen/archive/${id}`, { 
+        statut: !actuelStatut 
+      });
+      loadExamens(); // Recharger la liste
+    } catch (err) { 
+      alert("Erreur lors du changement de statut"); 
     }
   };
 
@@ -355,13 +356,17 @@ function ExamenCRUD() {
               const defaults = ex.valeurs_defaut ? ex.valeurs_defaut.split(',') : [];
 
               return (
-                <tr key={ex.id_examen}>
+                <tr key={ex.id_examen} className={!ex.est_actif ? "table-light text-muted" : ""}>
                   <td>
-                    <div className="fw-bold">{ex.nom_examen}</div>
+                    <div className="fw-bold">
+                        {ex.nom_examen} 
+                        {!ex.est_actif && <small className="badge bg-secondary ms-2">Archivé</small>}
+                    </div>
                     <small className={`badge ${ex.categorie === 'BILAN' ? 'bg-success' : 'bg-light text-dark border'}`}>
                       {ex.categorie}
                     </small>
                   </td>
+                  
                   <td>
                     {ex.categorie === 'BILAN' ? (
                       <span className="text-success small italic">📦 Composition du pack (Bilan)</span>
@@ -380,11 +385,23 @@ function ExamenCRUD() {
                   <td>
                     <div className="fw-bold">{ex.prix}</div>
                   </td>
+
                   <td className="no-print">
-                    <div className="btn-group">
-                      <button onClick={() => edit(ex)} className="btn btn-warning btn-sm">✏️</button>
-                      <button onClick={() => handleArchive(ex.id_examen)} className="btn btn-outline-danger btn-sm">📦</button>
-                      <button onClick={() => handleFullDelete(ex.id_examen)} className="btn btn-danger btn-sm">🗑️</button>
+                    <div className="d-flex align-items-center gap-2">
+                      {/* LE SWITCH D'ARCHIVAGE */}
+                      <div className="form-check form-switch">
+                        <input 
+                          className="form-check-input" 
+                          type="checkbox" 
+                          checked={ex.est_actif !== false} // Gère le null/undefined comme true
+                          onChange={() => toggleArchive(ex.id_examen, ex.est_actif !== false)}
+                        />
+                      </div>
+
+                      <div className="btn-group">
+                        <button onClick={() => edit(ex)} className="btn btn-warning btn-sm">✏️</button>
+                        <button onClick={() => handleFullDelete(ex.id_examen)} className="btn btn-danger btn-sm">🗑️</button>
+                      </div>
                     </div>
                   </td>
                 </tr>

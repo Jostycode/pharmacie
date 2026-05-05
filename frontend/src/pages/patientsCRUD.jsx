@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import axios from "axios";
 import socket from "../socket";
+import Logo from "../assets/logo.png";
+
 
 function PatientsCRUD() {
   const [data, setData] = useState([]);
@@ -74,7 +76,7 @@ function PatientsCRUD() {
   const filteredAndSortedData = useMemo(() => {
 
     let result = data.filter((p) => {
-      if (p.est_actif === false) return false;
+      
       const dateCrea = new Date(p.date_creation);
       const maintenant = new Date();
 
@@ -165,12 +167,27 @@ function PatientsCRUD() {
     setTelephone(""); setIdAbonnement(""); setIdConsultation(""); setEditId(null);
   };
 
-  const handleArchive = async (id) => {
-    if (window.confirm("Archiver ce patient ? Il ne sera plus visible mais ses données resteront en base.")) {
-      try {
-        await axios.patch(`http://localhost:3000/api/patient/archive/${id}`);
-        loadPatients();
-      } catch (error) { alert("Erreur d'archivage"); }
+  const toggleArchive = async (id, actuelStatut) => {
+    try {
+      const nouveauStatut = !actuelStatut;
+
+      // 1. Mise à jour "Optimiste" immédiate de l'interface
+      setData(prevData => 
+        prevData.map(p => 
+          p.id_patient === id ? { ...p, est_actif: nouveauStatut } : p
+        )
+      );
+
+      // 2. Appel API en arrière-plan
+      await axios.patch(`http://localhost:3000/api/patient/archive/${id}`, { 
+        statut: nouveauStatut 
+      });
+
+      // Note: Le socket "patients_updated" re-confirmera la donnée juste après
+    } catch (err) { 
+      console.error("Erreur archive:", err);
+      alert("Erreur lors du changement de statut");
+      loadPatients(); // Recharger les vraies données en cas d'échec
     }
   };
 
@@ -189,13 +206,64 @@ function PatientsCRUD() {
       {/* Styles pour l'impression */}
       <style>{`
         @media print {
-          .no-print, form, .btn, .mb-3, .input-group { display: none !important; }
-          .container { width: 100%; max-width: 100%; }
-          table { width: 100%; border: 1px solid black !important; }
+          /* Masquer les éléments inutiles */
+          .no-print, form, .btn, .mb-3, .input-group, .btn-group, .alert { 
+            display: none !important; 
+          }
+
+          /* Ajuster les marges de la page */
+          @page {
+            margin: 1cm;
+          }
+
+          .container { 
+            width: 100% !important; 
+            max-width: 100% !important; 
+            margin: 0 !important; 
+            padding: 0 !important; 
+          }
+
+          /* Style du tableau pour l'impression */
+          table { 
+            width: 100% !important; 
+            border-collapse: collapse !important;
+            font-size: 12px; /* Texte plus petit pour faire tenir plus de colonnes */
+          }
+          
+          th, td { 
+            border: 1px solid #000 !important; 
+            padding: 8px !important;
+          }
+
+          .badge {
+            border: 1px solid #ccc !important;
+            color: #000 !important;
+            background: transparent !important;
+          }
         }
       `}</style>
 
-      <h3 className="no-print">Gestion des Patients</h3>
+      {/* EN-TÊTE D'IMPRESSION (Visible uniquement à l'imprimante) */}
+      <div className="d-none d-print-block mb-4">
+        <div className="row align-items-center border-bottom pb-3">
+          <div className="col-4">
+            <img src={Logo} style={{width: '80px'}} />
+            <h4 className="fw-bold mb-0">clinique medicale les eaux</h4>
+            <p className="small mb-0">votre santé notre priorité</p>
+            <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
+          </div>
+          <div className="col-4 text-center">
+            <h2 className="text-uppercase fw-bold">Rapport</h2>
+          </div>
+          <div className="col-4 text-end">
+            <p className="mb-0">Date d'édition : {new Date().toLocaleDateString()}</p>
+            <p className="mb-0">Heure : {new Date().toLocaleTimeString()}</p>
+          </div>
+        </div>
+        <h3 className="text-center mt-3 text-decoration-underline">Liste des Patients Enregistrés</h3>
+      </div>
+
+      <h3 className="no-print mb-4">Gestion des Patients</h3>
 
       {/* Formulaire */}
       <form onSubmit={submit} className="card p-3 shadow-sm mb-4 no-print">
@@ -275,36 +343,61 @@ function PatientsCRUD() {
             </tr>
           </thead>
           <tbody>
-            {filteredAndSortedData.map((p) => (
-              <tr key={p.id_patient}>
-                <td>{p.nom} {p.prenom}</td>
+          {filteredAndSortedData.map((p) => {
+            // ÉTAPE CRUCIALE : Définir isActif à l'intérieur du map
+            const isActif = p.est_actif !== false; 
+
+            return (
+              <tr key={p.id_patient} className={!isActif ? "table-light text-muted" : ""}>
+                <td style={{ opacity: !isActif ? 0.6 : 1 }}>
+                  {p.nom} {p.prenom} 
+                  {!isActif && <small className="badge bg-secondary ms-2">Archivé</small>}
+                </td>
                 <td>{p.sexe}</td>
                 <td>{p.telephone}</td>
                 <td><span className={`badge ${p.abonne === "non" ? "bg-secondary" : "bg-success"}`}>{p.abonne}</span></td>
                 <td>
                   <span className={`badge ${p.consultation === "laboratoire" ? "bg-secondary" : "bg-info text-dark"}`}>
-                    {p.consultation }
+                    {p.consultation}
                   </span>
                 </td>
                 <td>{new Date(p.date_creation).toLocaleDateString()}</td>
                 <td className="no-print">
-                  <div className="btn-group">
-                    <button onClick={() => edit(p)} className="btn btn-warning btn-sm">Edit</button>
-                    
-                    {/* Bouton Archiver (Simple suppression) */}
-                    <button onClick={() => handleArchive(p.id_patient)} className="btn btn-outline-danger btn-sm" title="Archiver">
-                      📦
-                    </button>
-                    
-                    {/* Bouton Purge (Suppression totale) */}
-                    <button onClick={() => handleFullDelete(p.id_patient)} className="btn btn-danger btn-sm" title="Supprimer définitivement">
-                      🗑️
-                    </button>
+                  <div className="d-flex align-items-center gap-2">
+                    {/* LE SWITCH D'ARCHIVAGE */}
+                    <div className="form-check form-switch">
+                      <input 
+                        className="form-check-input" 
+                        type="checkbox" 
+                        role="switch"
+                        style={{ cursor: 'pointer' }}
+                        checked={isActif} 
+                        onChange={() => toggleArchive(p.id_patient, isActif)}
+                      />
+                    </div>
+
+                    <div className="btn-group">
+                      <button 
+                        onClick={() => edit(p)} 
+                        className="btn btn-warning btn-sm"
+                        disabled={!isActif} // Optionnel : empêcher l'édition d'un archivé
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handleFullDelete(p.id_patient)} 
+                        className="btn btn-danger btn-sm" 
+                        title="Supprimer définitivement"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
-            ))}
-          </tbody>
+            );
+          })}
+        </tbody>
         </table>
       </div>
     </div>

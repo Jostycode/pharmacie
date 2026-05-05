@@ -200,12 +200,71 @@ function DemandeExamen() {
 
   return (
     <div className="container mt-4 mb-5">
+      <style>{`
+            @media print {
+                /* Masquer les éléments inutiles */
+                .no-print, form,.alert { 
+                display: none !important; 
+                }
+    
+                /* Ajuster les marges de la page */
+                @page {
+                margin: 1cm;
+                }
+    
+                .container { 
+                width: 100% !important; 
+                max-width: 100% !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                }
+    
+                /* Style du tableau pour l'impression */
+                table { 
+                width: 100% !important; 
+                border-collapse: collapse !important;
+                font-size: 12px; /* Texte plus petit pour faire tenir plus de colonnes */
+                }
+                
+                th, td { 
+                border: 1px solid #000 !important; 
+                padding: 8px !important;
+                }
+    
+                .badge {
+                border: 1px solid #ccc !important;
+                color: #000 !important;
+                background: transparent !important;
+                }
+            }
+      `}</style>
+
+      {/* EN-TÊTE D'IMPRESSION (Visible uniquement à l'imprimante) */}
+      <div className="d-none d-print-block mb-4">
+      <div className="row align-items-center border-bottom pb-3">
+          <div className="col-4">
+          {/* <img src={Logo} style={{width: '80px'}} /> */}
+          <h4 className="fw-bold mb-0">destiny express</h4>
+          <p className="small mb-0">ggfs hjjkkdf</p>
+          <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
+          </div>
+          <div className="col-4 text-center">
+          <h2 className="text-uppercase fw-bold">Rapport</h2>
+          </div>
+          <div className="col-4 text-end">
+          <p className="mb-0">Date d'édition : {new Date().toLocaleDateString()}</p>
+          <p className="mb-0">Heure : {new Date().toLocaleTimeString()}</p>
+          </div>
+      </div>
+      <h3 className="text-center mt-3 text-decoration-underline no-print">Liste des Patients Enregistrés</h3>
+      </div>
+
       {/* SECTION FORMULAIRE (Modifiée ager afficher l'état Edition) */}
-      <div className={`card shadow-sm p-4 border-0 mb-4 ${isEditing ? 'border-start border-warning border-5' : 'bg-light'}`}>
+      <div className={`card no-print shadow-sm p-4 border-0 mb-4 ${isEditing ? 'border-start border-warning border-5' : 'bg-light'}`}>
         <h4 className={`mb-4 ${isEditing ? 'text-warning' : 'text-primary'}`}>
           {isEditing ? `✏️ Modification Demande #${editingId}` : '📑 Nouvelle Demande d\'Analyses'}
         </h4>
-        <div className="row">
+        <div className="row no-print">
           <div className="col-md-6 mb-3 position-relative">
             <label className="form-label fw-bold">Patient</label>
             <div className="input-group">
@@ -236,6 +295,8 @@ function DemandeExamen() {
             {showPatientList && !selectedPatient && searchPatient.length > 0 && (
               <ul className="list-group position-absolute w-100 shadow-lg" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
                 {patients
+                  // CORRECTION : On filtre pour ne garder que les patients actifs ou NULL
+                  .filter(p => p.est_actif !== false) 
                   .filter(p => `${p.nom} ${p.prenom}`.toLowerCase().includes(searchPatient.toLowerCase()))
                   .map(p => (
                     <li 
@@ -243,16 +304,17 @@ function DemandeExamen() {
                       className="list-group-item list-group-item-action"
                       style={{ cursor: 'pointer' }}
                       onClick={() => {
-                        handlePatientChange(p.id_patient); // Appel direct avec l'ID
+                        handlePatientChange(p.id_patient);
                         setShowPatientList(false);
                       }}
                     >
                       <strong>{p.nom}</strong> {p.prenom} <small className="text-muted">({p.telephone})</small>
                     </li>
                   ))}
-                  {patients.filter(p => `${p.nom} ${p.prenom}`.toLowerCase().includes(searchPatient.toLowerCase())).length === 0 && (
-                    <li className="list-group-item disabled">Aucun patient trouvé</li>
-                  )}
+                {/* Ajustement du message "Aucun trouvé" pour prendre en compte le filtre est_actif */}
+                {patients.filter(p => p.est_actif !== false && `${p.nom} ${p.prenom}`.toLowerCase().includes(searchPatient.toLowerCase())).length === 0 && (
+                  <li className="list-group-item disabled">Aucun patient actif trouvé</li>
+                )}
               </ul>
             )}
           </div>
@@ -289,10 +351,10 @@ function DemandeExamen() {
       </div>
 
       {/* SECTION HISTORIQUE AVEC FILTRES ET TRI */}
-      <div className="card shadow-sm p-4">
+      <div className="card shadow-sm p-4 ">
         <h4 className="mb-4">📋 Historique des Demandes</h4>
         
-        <div className="row g-2 mb-3 align-items-end">
+        <div className="row g-2 mb-3 align-items-end no-print">
           {/* Recherche textuelle */}
           <div className="col-md-3">
             <label className="form-label small fw-bold">Recherche rapide</label>
@@ -306,7 +368,7 @@ function DemandeExamen() {
           </div>
 
           {/* Sélecteur de type de période */}
-          <div className="col-md-3">
+          <div className="col-md-3 no-print">
             <label className="form-label small fw-bold">Période</label>
             <select className="form-select" value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)}>
               <option value="tous">Toutes les périodes</option>
@@ -329,7 +391,7 @@ function DemandeExamen() {
             </div>
           )}
 
-          <div className="col-md-3 ms-auto text-end">
+          <div className="col-md-3 ms-auto text-end no-print">
             <button onClick={() => window.print()} className="btn btn-dark w-100">🖨️ Imprimer</button>
           </div>
         </div>
@@ -346,8 +408,8 @@ function DemandeExamen() {
                   Patient {sortConfig.key === 'nom' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕️'}
                 </th>
                 <th>Médecin</th>
-                <th>Statut</th>
-                <th className="text-center">Actions</th>
+                <th className="no-print">Statut</th>
+                <th className="text-center no-print">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -359,12 +421,12 @@ function DemandeExamen() {
                       <span className="fw-bold text-uppercase">{d.nom}</span> {d.prenom}
                     </td>
                     <td>{d.medecin || <em className="text-muted">Non spécifié</em>}</td>
-                    <td>
+                    <td className="no-print">
                       <span className={`badge ${d.statut === 'nouveau' ? 'bg-info' : 'bg-success'}`}>
                         {d.statut}
                       </span>
                     </td>
-                    <td className="text-center">
+                    <td className="text-center no-print">
                       <div className="btn-group shadow-sm">
                         <button className="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalDetails" onClick={() => voirDetails(d)} title="Voir détails">
                           👁️
@@ -406,7 +468,8 @@ function DemandeExamen() {
               <input type="text" className="form-control" placeholder="🔍 Rechercher..." value={searchExamenModal} onChange={e=>setSearchExamenModal(e.target.value)} />
             </div>
             <div className="modal-body">
-              {examensDispo.filter(ex => ex.nom_examen.toLowerCase().includes(searchExamenModal.toLowerCase())).map(ex => (
+              {examensDispo.filter(ex => ex.nom_examen.toLowerCase().includes(searchExamenModal.toLowerCase()) &&ex.est_actif !== false // CORRECTION : Filtre les examens archivés
+                ).map(ex => (
                 <div key={ex.id_examen} className="d-flex justify-content-between border-bottom py-2 px-1">
                   <label htmlFor={`ex-${ex.id_examen}`}>{ex.nom_examen}</label>
                   <input className="form-check-input" type="checkbox" id={`ex-${ex.id_examen}`} checked={examensChoisis.includes(ex.id_examen)} onChange={() => toggleExamen(ex.id_examen)} />

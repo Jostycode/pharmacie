@@ -68,12 +68,13 @@ router.delete("/:id", async (req, res) => {
 });
 
 router.post("/connexion", async (req, res) => {
-  const { role, mdp } = req.body;
+  // On récupère "nom" car c'est ce que ton frontend envoie
+  const { nom, mdp } = req.body; 
 
   try {
     const result = await pool.query(
-      "SELECT * FROM inscription WHERE LOWER(role) = LOWER($1) AND mdp = $2", 
-      [role, mdp]
+      "SELECT * FROM inscription WHERE LOWER(nom) = LOWER($1) AND mdp = $2", 
+      [nom, mdp]
     );
     if (result.rows.length > 0) {
       res.json({ success: true, user: result.rows[0] });

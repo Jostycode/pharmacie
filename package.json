@@ -1,0 +1,27 @@
+{
+  "name": "labosoft",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "back": "npm start --prefix backend",
+    "front": "npm run host --prefix frontend",
+    "dev": "concurrently \"npm run back\" \"npm run front\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jostycode/resultat.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Jostycode/resultat/issues"
+  },
+  "homepage": "https://github.com/Jostycode/resultat#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -62,7 +62,7 @@ function Caisse() {
 
       {/* ... (Filtres identiques à ton code précédent) */}
 
-      <div className="table-responsive shadow-sm">
+      <div className="table-responsive shadow-sm no-print">
         <table className="table table-bordered table-hover align-middle">
           <thead className="table-dark text-center">
             <tr>
@@ -121,9 +121,10 @@ function Caisse() {
 
       {/* MODAL DE PAIEMENT & REÇU */}
       <div className="modal fade" id="modalPaiement" tabIndex="-1">
-        <div className="modal-dialog modal-md">
+        <div className="modal-dialog modal-dialog-scrollable modal-md">
           <div className="modal-content border-0 shadow-lg">
-            <div className="modal-header bg-success text-white">
+            {/* Header masqué à l'impression */}
+            <div className="modal-header bg-success text-white no-print">
               <h5 className="modal-title">🧾 Encaissement : {selectedPatient?.nom}</h5>
               <button type="button" className="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -131,42 +132,135 @@ function Caisse() {
             <div className="modal-body p-4" id="section-recu">
               {selectedPatient && (
                 <>
+                  <style>{`
+                    @media print {
+                      .no-print { display: none !important; }
+                      .modal-content { border: none !important; box-shadow: none !important; }
+                      body { padding: 0; margin: 0; }
+                      
+                      /* 2. Réinitialiser le Body pour permettre le scroll sur plusieurs pages */
+                      body, html {
+                        height: auto !important;
+                        overflow: visible !important;
+                        position: static !important;
+                      }
+
+                      /* 3. Forcer le modal à prendre toute la place et à ne plus être "fixe" */
+                      .modal {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: visible !important;
+                        display: block !important; /* Force l'affichage même si JS essaie de le cacher */
+                      }
+
+                      .modal-dialog {
+                        max-width: 100% !important;
+                        width: 100% !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                      }
+
+                      .modal-content {
+                        border: none !important;
+                        box-shadow: none !important;
+                        overflow: visible !important;
+                      }
+
+                      /* 4. Ajustement des marges papier */
+                      @page {
+                        // margin: 1.5cm !important;
+                        margin: 0cm !important;
+                      }
+                    }
+                  `}</style>
+
+                  {/* EN-TÊTE DU REÇU */}
                   <div className="text-center mb-4">
-                    <h4 className="fw-bold">DESTINY EXPRESS</h4>
-                    <p className="small text-muted">Reçu de caisse</p>
-                    <hr />
+                    <h3 className="fw-bold text-uppercase mb-0">DESTINY EXPRESS</h3>
+                    <p className="small mb-0">Laboratoire d'Analyses Médicales</p>
+                    <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
+                    <h5 className="mt-3 border-bottom border-top py-2">REÇU DE CAISSE</h5>
                   </div>
 
-                  <div className="d-flex justify-content-between mb-2">
-                    <span>Total de l'acte :</span>
-                    <span className="fw-bold">{Number(selectedPatient.montant_initial || 0).toLocaleString()} FCFA</span>
-                  </div>
-                  
-                  <div className="d-flex justify-content-between mb-2 text-success">
-                    <span>Déjà versé :</span>
-                    <span>{Number(selectedPatient.deja_paye || 0).toLocaleString()} FCFA</span>
+                  <div className="mb-4">
+                    <p className="mb-1"><strong>Patient :</strong> {selectedPatient.nom} {selectedPatient.prenom}</p>
+                    <p className="mb-1"><strong>Date :</strong> {new Date().toLocaleDateString()}</p>
                   </div>
 
-                  <div className="mb-3 no-print mt-3">
-                    <label className="form-label fw-bold text-primary">Nouveau versement :</label>
-                    <div className="input-group">
-                      <input 
-                        type="number" 
-                        className="form-control form-control-lg fw-bold border-primary" 
-                        value={montantSaisi}
-                        onChange={(e) => setMontantSaisi(parseFloat(e.target.value) || 0)}
-                        onFocus={(e) => e.target.select()} // Pratique pour effacer vite
-                      />
-                      <span className="input-group-text bg-primary text-white">FCFA</span>
+                  {/* TABLEAU DES DÉTAILS */}
+                  <table className="table table-sm border">
+                    <thead className="table-light">
+                      <tr>
+                        <th>Désignation</th>
+                        <th className="text-end">Prix (FCFA)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Ligne Consultation si prix > 0 */}
+                      {parseFloat(selectedPatient.prix_consultation) > 0 && (
+                        <tr>
+                          <td>Consultation</td>
+                          <td className="text-end">{Number(selectedPatient.prix_consultation).toLocaleString()}</td>
+                        </tr>
+                      )}
+                      {/* Liste des examens */}
+                      {selectedPatient.details_examens?.map((ex, i) => (
+                        <tr key={i}>
+                          <td>{ex.nom}</td>
+                          <td className="text-end">{Number(ex.prix).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="fw-bold">
+                        <td>TOTAL GÉNÉRAL</td>
+                        <td className="text-end">{Number(selectedPatient.montant_initial).toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  {/* RÉSUMÉ FINANCIER */}
+                  <div className="mt-4 p-3 bg-light border rounded">
+                    <div className="d-flex justify-content-between mb-1">
+                      <span>Cumul déjà payé :</span>
+                      <span className="fw-bold">{Number(selectedPatient.deja_paye).toLocaleString()} FCFA</span>
+                    </div>
+
+                    {/* Saisie montant (masqué à l'impression) */}
+                    <div className="no-print my-3 py-2 border-top border-bottom">
+                      <label className="form-label fw-bold text-primary">Montant versé ce jour :</label>
+                      <div className="input-group">
+                        <input 
+                          type="number" 
+                          className="form-control form-control-lg fw-bold" 
+                          value={montantSaisi}
+                          onChange={(e) => setMontantSaisi(parseFloat(e.target.value) || 0)}
+                        />
+                        <span className="input-group-text">FCFA</span>
+                      </div>
+                    </div>
+
+                    {/* Montant versé affiché seulement à l'impression */}
+                    <div className="d-none d-print-block d-flex justify-content-between mb-1">
+                      <span>Versé ce jour :</span>
+                      <span className="fw-bold">{Number(montantSaisi).toLocaleString()} FCFA</span>
+                    </div>
+
+                    <div className="d-flex justify-content-between mt-2 pt-2 border-top">
+                      <span className="fw-bold">RESTE À PAYER :</span>
+                      <span className="fw-bold text-danger">
+                        {Math.max(0, (selectedPatient.montant_initial - selectedPatient.deja_paye - montantSaisi)).toLocaleString()} FCFA
+                      </span>
                     </div>
                   </div>
 
-                  <div className="p-3 bg-light rounded border mt-4">
-                    <div className="d-flex justify-content-between mb-1">
-                      <span className="fw-bold">Reste après ce versement :</span>
-                      <span className="fw-bold text-danger">
-                        {Math.max(0, (selectedPatient.montant_initial || 0) - (selectedPatient.deja_paye || 0) - montantSaisi).toLocaleString()} FCFA
-                      </span>
+                  <div className="mt-5 d-none d-print-block">
+                    <div className="d-flex justify-content-between">
+                      <p className="small">Le Caissier</p>
+                      <p className="small">Le Client</p>
                     </div>
                   </div>
                 </>
@@ -174,9 +268,11 @@ function Caisse() {
             </div>
 
             <div className="modal-footer bg-light no-print">
-              <button className="btn btn-outline-dark" onClick={() => window.print()}>🖨️ Imprimer</button>
+              <button className="btn btn-outline-dark" onClick={() => window.print()}>
+                🖨️ Imprimer Reçu
+              </button>
               <button className="btn btn-success px-4" onClick={validerPaiement} data-bs-dismiss="modal">
-                ✅ Confirmer l'encaissement
+                ✅ Valider le Paiement
               </button>
             </div>
           </div>

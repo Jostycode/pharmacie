@@ -8,8 +8,9 @@ router.get("/", async (req, res) => {
       SELECT d.*, p.nom, p.prenom 
       FROM demande_examen d
       JOIN patient p ON d.id_patient = p.id_patient
-      WHERE d.statut IN ('en_attente')
-      ORDER BY d.date_demande DESC
+      WHERE d.statut IN ('en_attente') 
+        AND (p.est_actif = true) 
+      ORDER BY d.date_demande DESC;
     `);
     res.json(r.rows);
   } catch (err) {

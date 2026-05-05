@@ -84,10 +84,12 @@ router.put("/:id", async (req, res) => {
 router.get("/bilan/:id", async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT e.* FROM examen e
+      SELECT e.* 
+      FROM examen e
       JOIN bilan_composition bc ON e.id_examen = bc.id_examen_affilie
       WHERE bc.id_bilan = $1
-      ORDER BY e.categorie ASC`, 
+        AND (e.est_actif IS NOT FALSE) -- Optionnel : si vous archivez aussi les examens
+      ORDER BY e.categorie ASC;`, 
       [req.params.id]
     );
     res.json(r.rows);
@@ -110,8 +112,13 @@ router.get("/", async (req, res) => {
 // --- 1. ARCHIVAGE (Désactivation) ---
 router.patch("/archive/:id", async (req, res) => {
   try {
-    await pool.query(`UPDATE examen SET est_actif = false WHERE id_examen = $1`, [req.params.id]);
-    res.json({ success: true, message: "Examen archivé (masqué)" });
+    const { id } = req.params;
+    const { statut } = req.body; // Récupère le booléen envoyé par le front
+    await pool.query(
+      "UPDATE examen SET est_actif = $1 WHERE id_examen = $2",
+      [statut, id]
+    );
+    res.json({ success: true, message: "Statut mis à jour" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

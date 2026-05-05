@@ -7,12 +7,13 @@ function Parameteur() {
   const [nom, setNom] = useState("");
   const [age, setAge] = useState("");
   const [poids, setPoids] = useState("");
+  const [tension, setTension] = useState("");
+  const [temperature, setTemperature] = useState("");
   const [editId, setEditId] = useState(null);
 
-  // --- États pour le filtrage et tri ---
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("tous");
-  const [selectedDate, setSelectedDate] = useState(""); // Pour le calendrier spécifique
+  const [selectedDate, setSelectedDate] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "date_creation", direction: "desc" });
 
   const loadparameteurs = useCallback(async () => {
@@ -30,7 +31,6 @@ function Parameteur() {
     return () => socket.off("parameteurs_updated", loadparameteurs);
   }, [loadparameteurs]);
 
-  // --- Logique de Tri ---
   const requestSort = (key) => {
     let direction = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc") {
@@ -39,13 +39,11 @@ function Parameteur() {
     setSortConfig({ key, direction });
   };
 
-  // --- LOGIQUE DE FILTRAGE ET TRI ---
   const filteredAndSortedData = useMemo(() => {
     let result = data.filter((p) => {
       const dateCrea = new Date(p.date_creation);
       const maintenant = new Date();
 
-      // 1. Filtre par période
       let matchPeriod = true;
       if (filterPeriod === "jour") {
         matchPeriod = dateCrea.toDateString() === maintenant.toDateString();
@@ -57,38 +55,31 @@ function Parameteur() {
         matchPeriod = dateCrea.getFullYear() === maintenant.getFullYear();
       }
 
-      // 2. Filtre par recherche
-      const fullSearch = `${p.nom} ${p.prenom}`.toLowerCase();
+      const fullSearch = `${p.nom || ''} ${p.prenom || ''}`.toLowerCase();
       const matchSearch = fullSearch.includes(searchTerm.toLowerCase());
 
       return matchPeriod && matchSearch;
     });
 
-    // 3. Tri
     result.sort((a, b) => {
-      let aValue = a[sortConfig.key];
-      let bValue = b[sortConfig.key];
-
+      let aValue = a[sortConfig.key] || "";
+      let bValue = b[sortConfig.key] || "";
       if (sortConfig.key === "date_creation") {
         aValue = new Date(aValue);
         bValue = new Date(bValue);
       }
-
       if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
       if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
-
     return result;
   }, [data, searchTerm, filterPeriod, selectedDate, sortConfig]);
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
   const submit = async (e) => {
     e.preventDefault();
-    const payload = { age, poids };
+    const payload = { age, poids, tension, temperature }; 
     try {
       if (editId) {
         await axios.put(`http://localhost:3000/api/parameteur/${editId}`, payload);
@@ -101,11 +92,15 @@ function Parameteur() {
   };
 
   const resetForm = () => {
-    setNom(""); setAge(""); setPoids(""); setEditId(null);
+    setNom(""); setAge(""); setPoids(""); 
+    setTension(""); setTemperature(""); 
+    setEditId(null);
   };
 
   const edit = (p) => {
-    setNom(p.nom); setAge(p.age); setPoids(p.poids);
+    setNom(`${p.nom} ${p.prenom}`); setAge(p.age); setPoids(p.poids);
+    setTension(p.tension || ""); 
+    setTemperature(p.temperature || "");
     setEditId(p.id_patient);
   };
 
@@ -113,43 +108,69 @@ function Parameteur() {
     <div className="container mt-4">
       <style>{`
         @media print {
-          .no-print, form, button, .mb-3 { display: none !important; }
-          .container { width: 100%; max-width: 100%; margin: 0; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          .no-print, form, .btn, .input-group, .mb-3 { display: none !important; }
+          .container { width: 100%; max-width: 100%; }
+          table { width: 100%; border: 1px solid black !important; border-collapse: collapse; }
+          th, td { border: 1px solid black !important; padding: 10px; }
         }
+        .sort-icon { font-size: 0.8rem; margin-left: 5px; color: #aaa; }
+        .table-active-sort { background-color: #f8f9fa; }
       `}</style>
 
-      <h3 className="mb-4 no-print">Gestion des Paramètres Patients</h3>
+      <div className="d-flex justify-content-between align-items-center mb-4 no-print">
+        <h3>🩺 Paramètres Vitaux</h3>
+        <button onClick={handlePrint} className="btn btn-dark shadow-sm">
+          🖨️ Imprimer la liste
+        </button>
+      </div>
 
-      {/* FORMULAIRE (caché à l'impression) */}
-      <form onSubmit={submit} className="card p-3 shadow-sm mb-4 no-print">
-        <div className="row">
-          <div className="col-md-4 mb-2">
-            <input className="form-control" placeholder="Nom (Lecture seule)" value={nom} disabled />
+      {/* FORMULAIRE D'EDITION */}
+      <form onSubmit={submit} className="card border-0 shadow-sm p-4 mb-4 no-print bg-light">
+        <h5 className="mb-3 text-primary">{editId ? "📝 Modification des constantes" : "➕ Saisie des constantes"}</h5>
+        <div className="row g-3">
+          <div className="col-md-3">
+            <label className="small fw-bold">Patient</label>
+            <input className="form-control bg-white" value={nom} placeholder="Sélectionnez un patient..." disabled />
           </div>
-          <div className="col-md-4 mb-2">
-            <input className="form-control" type="number" placeholder="Age" value={age} onChange={(e) => setAge(e.target.value)} required />
+          <div className="col-md-2">
+            <label className="small fw-bold">Âge</label>
+            <input className="form-control" type="number" value={age} onChange={(e) => setAge(e.target.value)} required />
           </div>
-          <div className="col-md-4 mb-2">
-            <input className="form-control" type="number" placeholder="Poids" value={poids} onChange={(e) => setPoids(e.target.value)} />
+          <div className="col-md-2">
+            <label className="small fw-bold">Poids (kg)</label>
+            <input className="form-control" type="number" step="0.1" value={poids} onChange={(e) => setPoids(e.target.value)} />
+          </div>
+          <div className="col-md-3">
+            <label className="small fw-bold">Tension (mmHg)</label>
+            <input className="form-control" placeholder="ex: 12.8" value={tension} onChange={(e) => setTension(e.target.value)} />
+          </div>
+          <div className="col-md-2">
+            <label className="small fw-bold">Temp (°C)</label>
+            <input className="form-control" type="number" step="0.1" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
+          </div>
+          <div className="col-12 text-end">
+            {editId && <button type="button" className="btn btn-link text-muted me-2" onClick={resetForm}>Annuler</button>}
+            <button className={`btn ${editId ? 'btn-warning' : 'btn-primary'} px-4`}>
+              {editId ? "Mettre à jour" : "Enregistrer"}
+            </button>
           </div>
         </div>
-        <button className="btn btn-primary w-100">{editId ? "Mettre à jour" : "Ajouter"}</button>
       </form>
 
-      {/* CONTROLES (cachés à l'impression) */}
-      <div className="row mb-3 g-2 no-print">
-        <div className="col-md-4">
-          <input type="text" className="form-control" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      {/* FILTRES DE RECHERCHE */}
+      <div className="row g-2 mb-3 no-print">
+        <div className="col-md-5">
+          <div className="input-group">
+            <span className="input-group-text bg-white">🔍</span>
+            <input type="text" className="form-control border-start-0" placeholder="Rechercher un patient..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <select className="form-select" value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value)}>
-            <option value="tous">Toutes les dates</option>
+            <option value="tous">📅 Toutes les périodes</option>
             <option value="jour">Aujourd'hui</option>
-            <option value="selectDay">Choisir un jour précis</option>
+            <option value="selectDay">Choisir une date...</option>
             <option value="mois">Ce mois-ci</option>
-            <option value="annee">Cette année</option>
           </select>
         </div>
         {filterPeriod === "selectDay" && (
@@ -157,48 +178,60 @@ function Parameteur() {
             <input type="date" className="form-control" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
           </div>
         )}
-        <div className="col-md-2">
-          <button onClick={handlePrint} className="btn btn-secondary w-100">
-            🖨️ Imprimer
-          </button>
-        </div>
       </div>
 
-      {/* TABLEAU */}
-      <div className="table-responsive">
-        <h4 className="d-none d-print-block text-center mb-4">Liste des Paramètres Patients</h4>
-        <table className="table table-hover border">
-          <thead className="table-light">
-            <tr>
-              <th onClick={() => requestSort("nom")} style={{ cursor: "pointer" }}>
-                Nom & Prénom {sortConfig.key === "nom" ? (sortConfig.direction === "asc" ? "🔼" : "🔽") : ""}
-              </th>
-              <th>Age</th>
-              <th>Poids (kg)</th>
-              <th onClick={() => requestSort("date_creation")} style={{ cursor: "pointer" }}>
-                Date Enr. {sortConfig.key === "date_creation" ? (sortConfig.direction === "asc" ? "🔼" : "🔽") : ""}
-              </th>
-              <th className="no-print">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAndSortedData.length > 0 ? (
-              filteredAndSortedData.map((p) => (
-                <tr key={p.id_patient}>
-                  <td>{p.nom} {p.prenom}</td>
-                  <td>{p.age} ans</td>
-                  <td>{p.poids} kg</td>
-                  <td>{new Date(p.date_creation).toLocaleDateString()}</td>
-                  <td className="no-print">
-                    <button onClick={() => edit(p)} className="btn btn-warning btn-sm">Modifier</button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr><td colSpan="5" className="text-center">Aucun résultat trouvé</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* TABLEAU DES RESULTATS */}
+      <div className="card border-0 shadow-sm overflow-hidden">
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead className="table-primary text-nowrap">
+              <tr>
+                <th onClick={() => requestSort("nom")} style={{ cursor: "pointer" }}>
+                  Patient {sortConfig.key === "nom" ? (sortConfig.direction === "asc" ? "🔼" : "🔽") : "↕️"}
+                </th>
+                <th className="text-center">Âge</th>
+                <th className="text-center">Poids</th>
+                <th className="text-center">Tension</th>
+                <th className="text-center">Température</th>
+                <th className="text-center" onClick={() => requestSort("date_creation")} style={{ cursor: "pointer" }}>
+                  Date {sortConfig.key === "date_creation" ? (sortConfig.direction === "asc" ? "🔼" : "🔽") : "↕️"}
+                </th>
+                <th className="text-center no-print">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAndSortedData.length > 0 ? (
+                filteredAndSortedData.map((p) => (
+                  <tr key={p.id_patient}>
+                    <td className="fw-bold text-dark">{p.nom} {p.prenom}</td>
+                    <td className="text-center">{p.age} ans</td>
+                    <td className="text-center">{p.poids ? `${p.poids} kg` : "-"}</td>
+                    <td className="text-center">
+                       <span className="badge bg-info text-dark px-2">{p.tension || "-"}</span>
+                    </td>
+                    <td className="text-center">
+                      {p.temperature ? (
+                        <span className={`fw-bold ${p.temperature > 38 ? 'text-danger' : 'text-success'}`}>
+                          {p.temperature}°C
+                        </span>
+                      ) : "-"}
+                    </td>
+                    <td className="text-center small text-muted">
+                      {new Date(p.date_creation).toLocaleDateString()}
+                    </td>
+                    <td className="text-center no-print">
+                      <button onClick={() => edit(p)} className="btn btn-outline-primary btn-sm rounded-pill">
+                        Modifier
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr><td colSpan="7" className="text-center py-4 text-muted">Aucune donnée disponible pour cette sélection.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

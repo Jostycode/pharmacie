@@ -81,21 +81,36 @@ router.get("/:id", async (req, res) => {
 // On ne supprime rien, on change juste un statut (ex: actif = false)
 router.patch("/archive/:id", async (req, res) => {
   try {
-    await pool.query(`UPDATE patient SET est_actif = false WHERE id_patient = $1`, [req.params.id]);
-    res.json({ success: true, message: "Patient archivé" });
+    const { id } = req.params;
+    const { statut } = req.body; 
+
+    const result = await pool.query(
+      "UPDATE patient SET est_actif = $1 WHERE id_patient = $2 RETURNING *",
+      [statut, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Patient non trouvé" });
+    }
+
+    // Émettre l'update pour rafraîchir tous les clients connectés
+    if (req.io) req.io.emit("patients_updated"); 
+
+    res.json({ success: true, message: "Statut mis à jour" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur: " + err.message });
   }
 });
 
+// --- 2. DELETE COMPLET CORRIGÉ ---
 router.delete("/full-delete/:id", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const patientId = req.params.id;
 
-    // 1. Supprimer les résultats spécifiques (Bactério, Séro, Valeurs)
-    // On remonte depuis le patient jusqu'aux résultats
+    // A. Supprimer les résultats (valeurs numériques/texte)
     await client.query(`
       DELETE FROM resultat_valeur WHERE id_resultat IN (
         SELECT re.id_resultat FROM resultat_examen re
@@ -104,7 +119,7 @@ router.delete("/full-delete/:id", async (req, res) => {
         WHERE de.id_patient = $1
       )`, [patientId]);
 
-    // 2. Supprimer les entrées dans la table pivot des résultats
+    // B. Supprimer les entrées de résultats d'examen
     await client.query(`
       DELETE FROM resultat_examen WHERE id_ligne IN (
         SELECT id_ligne FROM demande_examen_ligne del
@@ -112,28 +127,26 @@ router.delete("/full-delete/:id", async (req, res) => {
         WHERE de.id_patient = $1
       )`, [patientId]);
 
-    // 3. Supprimer les lignes de la demande
+    // C. Supprimer les lignes de demande
     await client.query(`
       DELETE FROM demande_examen_ligne WHERE id_demande IN (
         SELECT id_demande FROM demande_examen WHERE id_patient = $1
       )`, [patientId]);
 
-    // 4. Supprimer la demande elle-même
+    // D. Supprimer les paiements/factures liés au patient (SOUVENT OUBLIÉ)
+    await client.query(`DELETE FROM paiement WHERE id_patient = $1`, [patientId]);
+
+    // E. Supprimer la demande elle-même
     await client.query(`DELETE FROM demande_examen WHERE id_patient = $1`, [patientId]);
 
-    // 5. Enfin, supprimer le patient
+    // F. Enfin, supprimer le patient
     const result = await client.query(`DELETE FROM patient WHERE id_patient = $1`, [patientId]);
 
-    if (result.rowCount === 0) {
-      throw new Error("Patient non trouvé");
-    }
-
     await client.query('COMMIT');
-    res.json({ success: true, message: "Purger avec succès" });
+    res.json({ success: true, message: "Patient et toutes ses données supprimés" });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error("ERREUR CRITIQUE DÉLÉTION:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erreur de suppression: " + err.message });
   } finally {
     client.release();
   }

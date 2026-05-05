@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 
 function ResultatExamen() {
-  // États pour les listes
+  // --- ÉTATS ---
   const [examensEnAttente, setExamensEnAttente] = useState([]);
   const [historique, setHistorique] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
 
-  // États pour le formulaire
   const [selectedExamen, setSelectedExamen] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -14,22 +14,26 @@ function ResultatExamen() {
     seroData: { resultat: "", titre: "", valeur: "", interpretation: "" }
   });
 
-  // États de filtrage HISTORIQUE (Droite)
+  // Filtrage
   const [filtreDate, setFiltreDate] = useState("tous");
   const [dateSelectionnee, setDateSelectionnee] = useState("");
   const [searchHistorique, setSearchHistorique] = useState("");
-
-  // États de filtrage ATTENTE (Gauche)
   const [filtreDateAttente, setFiltreDateAttente] = useState("tous");
-  const [dateAttentePrecise, setDateAttentePrecise] = useState(""); // ÉTAIT MANQUANT
+  const [dateAttentePrecise, setDateAttentePrecise] = useState("");
   const [searchAttente, setSearchAttente] = useState("");
 
   const API_URL = "http://localhost:3000/api/resultats";
 
+  // --- EFFETS ---
   useEffect(() => {
+    const storedUser = sessionStorage.getItem("user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    }
     refreshData();
   }, [filtreDate, dateSelectionnee]);
 
+  // --- ACTIONS ---
   const refreshData = async () => {
     try {
       const params = { filtre: filtreDate, datePrecise: dateSelectionnee };
@@ -66,12 +70,18 @@ function ResultatExamen() {
 
   const soumettreResultat = async (e) => {
     e.preventDefault();
+
+    if (!currentUser) {
+      alert("Erreur : Aucun utilisateur connecté.");
+      return;
+    }
+
     try {
       const payload = {
         id_ligne: selectedExamen.id_ligne,
         id_examen_reel: selectedExamen.id_examen_reel,
         categorie: selectedExamen.categorie,
-        valide_par: "LABO_USER",
+        valide_par: currentUser.nom, // Automatique via session
         parametres: formData.parametres,
         seroData: formData.seroData
       };
@@ -82,7 +92,7 @@ function ResultatExamen() {
         await axios.post(API_URL, payload);
       }
 
-      alert("Succès !");
+      alert(`Succès ! Validé par ${currentUser.nom}`);
       setSelectedExamen(null);
       refreshData();
     } catch (err) {
@@ -125,24 +135,19 @@ function ResultatExamen() {
     }
   };
 
-  // --- LOGIQUE FILTRAGE GAUCHE (Attente) ---
+  // --- FILTRAGE ---
   const attenteFiltre = useMemo(() => {
     return examensEnAttente.filter(ex => {
       const matchSearch = `${ex.nom} ${ex.prenom} ${ex.nom_examen}`.toLowerCase().includes(searchAttente.toLowerCase());
       const dateDemande = new Date(ex.date_demande).toLocaleDateString('en-CA');
       const aujourdhui = new Date().toLocaleDateString('en-CA');
-
       let matchDate = true;
-      if (filtreDateAttente === "aujourdhui") {
-        matchDate = dateDemande === aujourdhui;
-      } else if (filtreDateAttente === "precis" && dateAttentePrecise) {
-        matchDate = dateDemande === dateAttentePrecise;
-      }
+      if (filtreDateAttente === "aujourdhui") matchDate = dateDemande === aujourdhui;
+      else if (filtreDateAttente === "precis" && dateAttentePrecise) matchDate = dateDemande === dateAttentePrecise;
       return matchSearch && matchDate;
     });
   }, [examensEnAttente, searchAttente, filtreDateAttente, dateAttentePrecise]);
 
-  // --- LOGIQUE FILTRAGE DROITE (Historique) ---
   const historiqueFiltre = useMemo(() => {
     return historique.filter(h =>
       `${h.nom_patient} ${h.prenom_patient} ${h.nom_examen}`.toLowerCase().includes(searchHistorique.toLowerCase())
@@ -176,11 +181,7 @@ function ResultatExamen() {
                   )}
                 </div>
               </div>
-              {filtreDateAttente === "precis" && (
-                <input type="text" className="form-control form-control-sm mt-1" placeholder="🔍 Filtrer par nom..." value={searchAttente} onChange={(e) => setSearchAttente(e.target.value)} />
-              )}
             </div>
-
             <div className="list-group list-group-flush" style={{ maxHeight: '600px', overflowY: 'auto' }}>
               {attenteFiltre.map((ex, i) => (
                 <button key={i} className={`list-group-item list-group-item-action ${selectedExamen?.id_ligne === ex.id_ligne ? 'active' : ''}`} onClick={() => handleSelect(ex)}>
@@ -196,7 +197,6 @@ function ResultatExamen() {
         </div>
 
         {/* COLONNE DROITE */}
-        {/* COLONNE DROITE : FORMULAIRE ET HISTORIQUE */}
         <div className="col-md-8">
           {selectedExamen ? (
             <div className="card shadow border-primary mb-4">
@@ -205,7 +205,12 @@ function ResultatExamen() {
                 <button className="btn-close btn-close-white" onClick={() => setSelectedExamen(null)}></button>
               </div>
               <form className="card-body" onSubmit={soumettreResultat}>
-                {/* Rendu dynamique Bio/Sero inchangé... */}
+                
+                {/* Indicateur de session */}
+                <div className="alert alert-light border mb-3 py-1 px-2 small">
+                  👤 Connecté en tant que : <strong>{currentUser?.nom}</strong>
+                </div>
+
                 {selectedExamen.categorie.toUpperCase().includes("BIOCHIMIE") && (
                    <table className="table table-sm">
                      <thead><tr><th>Paramètre</th><th>Résultat</th><th>Norme</th></tr></thead>
@@ -258,7 +263,7 @@ function ResultatExamen() {
             <div className="alert alert-info shadow-sm">Sélectionnez un examen à gauche pour commencer.</div>
           )}
 
-          {/* TABLEAU HISTORIQUE AVEC FILTRES */}
+          {/* HISTORIQUE */}
           <div className="card shadow-sm border-0">
             <div className="card-header bg-dark text-white">
               <div className="row align-items-center g-2">
@@ -271,13 +276,8 @@ function ResultatExamen() {
                     <option value="precis">Jour précis...</option>
                   </select>
                 </div>
-                {filtreDate === "precis" && (
-                  <div className="col-md-3">
-                    <input type="date" className="form-control form-control-sm" onChange={(e) => setDateSelectionnee(e.target.value)} />
-                  </div>
-                )}
-                <div className={filtreDate === "precis" ? "col-md-3" : "col-md-6"}>
-                  <input type="text" className="form-control form-control-sm" placeholder="🔍 Rechercher..." onChange={(e) => setSearch(e.target.value)} />
+                <div className="col-md-6">
+                  <input type="text" className="form-control form-control-sm" placeholder="🔍 Rechercher..." onChange={(e) => setSearchHistorique(e.target.value)} />
                 </div>
               </div>
             </div>
