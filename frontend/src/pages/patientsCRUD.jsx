@@ -22,6 +22,20 @@ function PatientsCRUD() {
   const [selectedDate, setSelectedDate] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "date_creation", direction: "desc" });
 
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    // Récupérer et parser l'objet stocké dans Login
+    const storedUser = sessionStorage.getItem("user");
+    if (storedUser) {
+      try {
+        setCurrentUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error("Erreur de lecture du sessionStorage", e);
+      }
+    }
+  }, []);  
+
   const loadPatients = useCallback(async () => {
     try {
       const r = await axios.get(`http://localhost:3000/api/patient/`);
@@ -168,6 +182,11 @@ function PatientsCRUD() {
   };
 
   const toggleArchive = async (id, actuelStatut) => {
+
+    if (!currentUser || currentUser.role !== "admin" ) {
+    alert("Accès refusé : Seul l'administrateur peut archiver un patient.");
+    return;
+    }
     try {
       const nouveauStatut = !actuelStatut;
 
@@ -195,11 +214,15 @@ function PatientsCRUD() {
     const code = prompt("⚠️ ACTION IRRÉVERSIBLE ⚠️\nTous les examens et résultats seront supprimés.\nTapez 'CONFIRMER' pour valider :");
     if (code === "CONFIRMER") {
       try {
+        // ✅ Utilise AXIOS ici, pas 'client'
         await axios.delete(`http://localhost:3000/api/patient/full-delete/${id}`);
-        loadPatients();
-      } catch (error) { alert("Erreur lors de la suppression complète"); }
+        loadPatients(); 
+      } catch (error) {
+        console.error("Erreur lors de la suppression :", error);
+        alert("Impossible de supprimer le patient.");
+      }
     }
-  };
+};
 
   return (
     <div className="container mt-4">
@@ -365,16 +388,21 @@ function PatientsCRUD() {
                 <td className="no-print">
                   <div className="d-flex align-items-center gap-2">
                     {/* LE SWITCH D'ARCHIVAGE */}
-                    <div className="form-check form-switch">
-                      <input 
-                        className="form-check-input" 
-                        type="checkbox" 
-                        role="switch"
-                        style={{ cursor: 'pointer' }}
-                        checked={isActif} 
-                        onChange={() => toggleArchive(p.id_patient, isActif)}
-                      />
-                    </div>
+                    {currentUser?.role === "admin" ? (
+                      <div className="form-check form-switch">
+                        <input 
+                          className="form-check-input" 
+                          type="checkbox" 
+                          role="switch"
+                          style={{ cursor: 'pointer' }}
+                          checked={isActif} 
+                          onChange={() => toggleArchive(p.id_patient, isActif)}
+                        />
+                      </div>
+                    ) : (
+                      // Optionnel : un petit cadenas ou rien du tout pour les non-admins
+                      <span title="Action réservée à l'administrateur">🔒</span>
+                    )}
 
                     <div className="btn-group">
                       <button 
@@ -384,13 +412,13 @@ function PatientsCRUD() {
                       >
                         Edit
                       </button>
-                      <button 
+                      {/* <button 
                         onClick={() => handleFullDelete(p.id_patient)} 
                         className="btn btn-danger btn-sm" 
                         title="Supprimer définitivement"
                       >
                         🗑️
-                      </button>
+                      </button> */}
                     </div>
                   </div>
                 </td>

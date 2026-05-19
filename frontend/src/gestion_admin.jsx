@@ -8,7 +8,7 @@ import Dashboard from "./pages/dashboard";
 import Abonnement from "./pages/abonnement";
 import Inscription from "./inscription";
 import Parameteur from "./pages/parameteur";
-import DemandeExamen from "./pages/DemandeExamen";
+
 import DemandeExamen1 from "./pages/DemandeExamen1";
 import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";

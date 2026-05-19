@@ -9,7 +9,7 @@ import Abonnement from "./pages/abonnement";
 import Inscription from "./inscription";
 import Login from "./login";
 import Parameteur from "./pages/parameteur";
-import DemandeExamen from "./pages/DemandeExamen";
+
 import DemandeExamen1 from "./pages/DemandeExamen1";
 import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
@@ -40,8 +40,7 @@ function Gestion() {
         return <ExamenCRUD />;
       case "demande_medecin":
         return <DemandeMedecin />;
-      case "demande_examen":
-        return <DemandeExamen />
+
       case "demande_examen1":
         return <DemandeExamen1 />
       case " demande_labo":
@@ -123,12 +122,6 @@ function Gestion() {
           </li>
           <li>
             <button
-              onClick={() => setActivePage("demande_examen")}
-              className="nav-link text-white btn btn-link"
-            >
-              demande examen
-            </button>
-            <button
               onClick={() => setActivePage("demande_examen1")}
               className="nav-link text-white btn btn-link"
             >
@@ -168,15 +161,6 @@ function Gestion() {
               className="nav-link text-white btn btn-link"
             >
               Utilisateurs
-            </button>
-          </li>
-
-          <li>
-            <button
-              onClick={() => setActivePage("utilisateurs")}
-              className="nav-link text-white btn btn-link"
-            >
-              Utilisateurs1
             </button>
           </li>
 

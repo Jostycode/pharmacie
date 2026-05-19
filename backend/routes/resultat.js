@@ -10,26 +10,44 @@ const notifyRefresh = (req) => {
 // --- 1. EXAMENS EN ATTENTE ---
 router.get("/en_attente", async (req, res) => {
   try {
-    const r = await pool.query(`
+    const query = `
       SELECT 
-        l.id_ligne, d.id_demande, d.date_demande, p.nom, p.prenom,
+        l.id_ligne, 
+        d.id_demande, 
+        d.date_demande, 
+        p.nom, 
+        p.prenom,
+        -- Si c'est un bilan, on prend le nom de l'examen affilé, sinon l'examen direct
         COALESCE(e_affilie.nom_examen, e.nom_examen) AS nom_examen,
         COALESCE(e_affilie.id_examen, e.id_examen) AS id_examen_reel,
         COALESCE(e_affilie.categorie, e.categorie) AS categorie,
         COALESCE(e_affilie.parametre, e.parametre) AS parametre,
-        COALESCE(e_affilie.valeurs_defaut, e.valeurs_defaut) AS valeurs_defaut
+        COALESCE(e_affilie.valeurs_defaut, e.valeurs_defaut) AS valeurs_defaut,
+        -- Priorité à la section spécifique du bilan, sinon section de l'examen, sinon 'Général'
+        COALESCE(bc.sous_categorie_specifique, e_affilie.sous_categories, e.sous_categories, 'Général') AS section
       FROM demande_examen_ligne l
       JOIN demande_examen d ON l.id_demande = d.id_demande
       JOIN patient p ON d.id_patient = p.id_patient
       JOIN examen e ON l.id_examen = e.id_examen
+      -- Jointure pour voir si l'examen est un bilan
       LEFT JOIN bilan_composition bc ON e.id_examen = bc.id_bilan
       LEFT JOIN examen e_affilie ON bc.id_examen_affilie = e_affilie.id_examen
-      LEFT JOIN resultat_examen re ON (re.id_ligne = l.id_ligne AND re.id_examen = COALESCE(e_affilie.id_examen, e.id_examen))
-      WHERE re.id_resultat IS NULL AND d.statut = 'validé'
-      ORDER BY d.date_demande DESC, p.nom ASC
-    `);
-    res.json(r.rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+      -- On exclut ce qui est déjà saisi
+      LEFT JOIN resultat_examen re ON (
+        re.id_ligne = l.id_ligne 
+        AND re.id_examen = COALESCE(e_affilie.id_examen, e.id_examen)
+      )
+      WHERE re.id_resultat IS NULL 
+      AND d.statut = 'validé'
+      ORDER BY d.date_demande DESC, p.nom ASC;
+    `;
+    
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Erreur Serveur");
+  }
 });
 
 // --- 2. RÉCUPÉRER LES DÉTAILS D'UN RÉSULTAT (CRUCIAL POUR LA MODIFICATION) ---
@@ -49,60 +67,106 @@ router.get("/details/:id_resultat", async (req, res) => {
 
 // --- 3. ENREGISTREMENT (POST) ---
 router.post("/", async (req, res) => {
-  const { id_ligne, id_examen_reel, valide_par, categorie, parametres, seroData } = req.body;
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const resRes = await client.query(
-      `INSERT INTO resultat_examen (id_ligne, id_examen, valide_par, statut) VALUES ($1, $2, $3, 'termine') RETURNING id_resultat`,
-      [id_ligne, id_examen_reel, valide_par]
-    );
-    const id_resultat = resRes.rows[0].id_resultat;
-    const cat = (categorie || "").toUpperCase();
+    const { id_ligne, id_examen_reel, bioData, seroData, categorie, valide_par, date_resultat } = req.body;
+    await client.query("BEGIN");
 
-    if (cat.includes("BIOCHIMIE")) {
-      for (let p of parametres) {
-        await client.query(
-          `INSERT INTO resultat_biochimie (id_resultat, nom_parametre, resultat, valeur, interpretation) VALUES ($1, $2, $3, $4, $5)`,
-          [id_resultat, p.parametre, p.resultat, p.valeur, p.interpretation || null]
-        );
+    // Si une date personnalisée est fournie, on l'applique, sinon CURRENT_TIMESTAMP
+    const dateSaisie = date_resultat ? date_resultat : new Date();
+
+    // Insertion avec prise en compte de la date choisie par l'utilisateur
+    const resParent = await client.query(
+      `INSERT INTO resultat_examen (id_ligne, id_examen, date_resultat, valide_par) 
+       VALUES ($1, $2, $3, $4) RETURNING id_resultat`,
+      [id_ligne, id_examen_reel, dateSaisie, valide_par || "Laboratoire"]
+    );
+    const id_resultat = resParent.rows[0].id_resultat;
+
+    const catUpper = categorie ? categorie.toUpperCase() : "";
+    if (catUpper.includes("BIOCHIMIE") || catUpper.includes("HEMATOLOGIE")) {
+      if (bioData && Object.keys(bioData).length > 0) {
+        for (const [nom, valeurResultat] of Object.entries(bioData)) {
+          await client.query(
+            `INSERT INTO resultat_biochimie (id_resultat, nom_parametre, resultat, valeur) 
+             VALUES ($1, $2, $3, $4)`,
+            [id_resultat, nom, valeurResultat, "-"]
+          );
+        }
       }
-    } else if (cat.includes("SEROLOGIE")) {
+    } else {
       await client.query(
-        `INSERT INTO resultat_serologie (id_resultat, resultat, titre, valeur, interpretation) VALUES ($1, $2, $3, $4, $5)`,
-        [id_resultat, seroData.resultat, seroData.titre, seroData.valeur, seroData.interpretation || null]
+        `INSERT INTO resultat_serologie (id_resultat, resultat, titre, valeur, interpretation) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id_resultat, seroData?.resultat, seroData?.titre, seroData?.valeur, seroData?.interpretation || "RAS"]
       );
     }
-    await client.query('COMMIT');
-    notifyRefresh(req);
-    res.json({ success: true });
+
+    await client.query("UPDATE demande_examen_ligne SET statut = 'termine' WHERE id_ligne = $1", [id_ligne]);
+
+    await client.query("COMMIT");
+    res.json({ success: true, message: "Enregistré avec succès !", id_resultat });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
+    console.error(err);
     res.status(500).json({ error: err.message });
-  } finally { client.release(); }
+  } finally {
+    client.release();
+  }
 });
 
 // --- 4. MODIFICATION (PUT) ---
 router.put("/:id_resultat", async (req, res) => {
   const { id_resultat } = req.params;
-  const { categorie, parametres, seroData, valide_par } = req.body;
+  const { categorie, parametres, seroData, valide_par, date_resultat } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`UPDATE resultat_examen SET valide_par = $1, date_resultat = CURRENT_TIMESTAMP WHERE id_resultat = $2`, [valide_par, id_resultat]);
     
-    if (categorie.toUpperCase().includes("BIOCHIMIE")) {
+    // On met à jour l'opérateur ET la date d'enregistrement commune
+    const dateSaisie = date_resultat ? date_resultat : new Date();
+    
+    await client.query(
+      `UPDATE resultat_examen 
+       SET valide_par = $1, date_resultat = $2 
+       WHERE id_resultat = $3`, 
+      [valide_par || "Laboratoire", dateSaisie, id_resultat]
+    );
+    
+    const catUpper = categorie ? categorie.toUpperCase() : "";
+    if (catUpper.includes("BIOCHIMIE") || catUpper.includes("HEMATOLOGIE")) {
       await client.query(`DELETE FROM resultat_biochimie WHERE id_resultat = $1`, [id_resultat]);
-      for (let p of parametres) {
-        await client.query(`INSERT INTO resultat_biochimie (id_resultat, nom_parametre, resultat, valeur) VALUES ($1, $2, $3, $4)`, [id_resultat, p.nom_parametre || p.parametre, p.resultat, p.valeur]);
+      
+      if (parametres && parametres.length > 0) {
+        for (let p of parametres) {
+          const nomChamp = p.nom_parametre || p.parametre;
+          if (nomChamp) {
+            await client.query(
+              `INSERT INTO resultat_biochimie (id_resultat, nom_parametre, resultat, valeur) 
+               VALUES ($1, $2, $3, $4)`, 
+              [id_resultat, nomChamp, p.resultat, p.valeur || "-"]
+            );
+          }
+        }
       }
     } else {
-      await client.query(`UPDATE resultat_serologie SET resultat=$1, titre=$2, valeur=$3 WHERE id_resultat=$4`, [seroData.resultat, seroData.titre, seroData.valeur, id_resultat]);
+      await client.query(
+        `UPDATE resultat_serologie 
+         SET resultat=$1, titre=$2, valeur=$3, interpretation=$4 
+         WHERE id_resultat=$5`, 
+        [seroData?.resultat, seroData?.titre, seroData?.valeur, seroData?.interpretation, id_resultat]
+      );
     }
+    
     await client.query('COMMIT');
-    notifyRefresh(req);
-    res.json({ success: true });
-  } catch (err) { await client.query('ROLLBACK'); res.status(500).json({ error: err.message }); } finally { client.release(); }
+    res.json({ success: true, message: "Modifications globales enregistrées avec succès !" });
+  } catch (err) { 
+    await client.query('ROLLBACK'); 
+    console.error(err);
+    res.status(500).json({ error: err.message }); 
+  } finally { 
+    client.release(); 
+  }
 });
 
 // --- 5. SUPPRESSION & HISTORIQUE (Déjà présents dans ton code) ---
@@ -154,55 +218,34 @@ router.get("/effectues", async (req, res) => {
 router.get("/complets", async (req, res) => {
   try {
     const query = `
-      -- BLOC 1 : BIOCHIMIE
       SELECT 
-        p.id_patient::TEXT, p.nom::TEXT, p.prenom::TEXT,
-        d.id_demande::TEXT, d.date_demande::TIMESTAMP,
-        e.categorie::TEXT, e.nom_examen::TEXT, 
-        COALESCE(rb.nom_parametre, e.nom_examen)::TEXT AS nom_parametre, 
-        COALESCE(rb.resultat, '')::TEXT AS valeur_resultat, 
-        COALESCE(rb.valeur, '-')::TEXT AS norme_reference, 
-        ''::TEXT AS titre_sero,
-        ''::TEXT AS interpretation_sero,
-        'OUI'::TEXT AS est_biochimie,
-        'NON'::TEXT AS est_bilan -- Changé ici pour éviter l'erreur si la colonne n'existe pas
-      FROM demande_examen_ligne l
+          p.nom, 
+          p.prenom, 
+          p.id_patient,
+          d.id_demande, 
+          d.date_demande,
+          e.categorie, 
+          e.nom_examen,       -- TRÈS IMPORTANT pour l'éclatement des tableaux
+          e.sous_categories,   -- Actuellement vide ("") d'après ton debug
+          
+          COALESCE(rb.nom_parametre, e.nom_examen) AS nom_parametre,
+          rb.resultat AS valeur_resultat,
+          rb.valeur AS norme_reference
+          
+      FROM resultat_examen r
+      JOIN demande_examen_ligne l ON r.id_ligne = l.id_ligne
       JOIN demande_examen d ON l.id_demande = d.id_demande
       JOIN patient p ON d.id_patient = p.id_patient
       JOIN examen e ON l.id_examen = e.id_examen
-      JOIN resultat_examen re ON re.id_ligne = l.id_ligne
-      JOIN resultat_biochimie rb ON re.id_resultat = rb.id_resultat
-      WHERE e.categorie NOT ILIKE '%SEROLOGIE%'
-
-      UNION ALL
-
-      -- BLOC 2 : SÉROLOGIE
-      SELECT 
-        p.id_patient::TEXT, p.nom::TEXT, p.prenom::TEXT,
-        d.id_demande::TEXT, d.date_demande::TIMESTAMP,
-        e.categorie::TEXT, e.nom_examen::TEXT,
-        e.nom_examen::TEXT AS nom_parametre, 
-        COALESCE(rs.resultat, '')::TEXT AS valeur_resultat, 
-        COALESCE(rs.valeur, '-')::TEXT AS norme_reference,
-        COALESCE(rs.titre, '-')::TEXT AS titre_sero,
-        COALESCE(rs.interpretation, '-')::TEXT AS interpretation_sero,
-        'NON'::TEXT AS est_biochimie,
-        'NON'::TEXT AS est_bilan -- Idem ici
-      FROM demande_examen_ligne l
-      JOIN demande_examen d ON l.id_demande = d.id_demande
-      JOIN patient p ON d.id_patient = p.id_patient
-      JOIN examen e ON l.id_examen = e.id_examen
-      JOIN resultat_examen re ON re.id_ligne = l.id_ligne
-      JOIN resultat_serologie rs ON re.id_resultat = rs.id_resultat
-      WHERE e.categorie ILIKE '%SEROLOGIE%'
+      LEFT JOIN resultat_biochimie rb ON r.id_resultat = rb.id_resultat
       
-      ORDER BY date_demande DESC;
+      ORDER BY d.id_demande DESC, e.categorie ASC, e.nom_examen ASC;
     `;
-    const r = await pool.query(query);
-    res.json(r.rows);
+    
+    const result = await pool.query(query);
+    res.json(result.rows);
   } catch (err) {
-    // TRÈS IMPORTANT : regarde ta console terminal (node) pour voir le message précis
-    console.error("ERREUR POSTGRES :", err.message); 
+    console.error("DEBUG SQL ERROR:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

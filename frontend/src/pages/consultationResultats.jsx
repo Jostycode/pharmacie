@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
+import Logo from "../assets/logo.png";
 
 function ListeResultatsGroupes() {
   const [resultats, setResultats] = useState([]);
-  const [filterDate, setFilterDate] = useState("");
   const [search, setSearch] = useState("");
-  // État pour savoir quel dossier est en cours d'impression (null = tous)
   const [printingId, setPrintingId] = useState(null);
 
   useEffect(() => {
@@ -13,181 +12,206 @@ function ListeResultatsGroupes() {
       try {
         const res = await axios.get("http://localhost:3000/api/resultats/complets");
         setResultats(res.data);
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        console.error("Erreur de chargement dans le composant:", err);
+      }
     };
     fetchData();
   }, []);
 
   const demandesGroupees = useMemo(() => {
-    const dossiers = {};
     if (!resultats || resultats.length === 0) return [];
 
+    const dossiers = {};
+
     resultats.forEach((ligne) => {
-      const cleDossier = `${ligne.id_patient}_${ligne.id_demande}`;
-      if (!dossiers[cleDossier]) {
-        dossiers[cleDossier] = {
-          idUnique: cleDossier, // On stocke la clé pour l'identification
-          infosPatient: { 
-            id: ligne.id_patient, 
+      const idDossier = `${ligne.id_patient}_${ligne.id_demande}`;
+      
+      if (!dossiers[idDossier]) {
+        dossiers[idDossier] = {
+          idUnique: idDossier,
+          // Récupération de l'âge et du sexe depuis la ligne SQL
+          patient: { 
             nom: ligne.nom, 
             prenom: ligne.prenom, 
             date: ligne.date_demande,
-            medecin: ligne.medecin // Optionnel : ajouter le médecin
+            age: ligne.age,
+            sexe: ligne.sexe 
           },
-          categories: {} 
+          categories: {}
         };
       }
 
-      const catNom = ligne.categorie || "Autres";
-      const examenCle = ligne.est_bilan === 'OUI' ? `BILAN : ${ligne.nom_examen}` : ligne.nom_examen;
+      // 1. Catégorie principale (ex: BIOCHIMIE)
+      const nomCat = (ligne.categorie === "BILAN" ? "BIOCHIMIE" : ligne.categorie || "BIOCHIMIE").toUpperCase().trim();
+      if (!dossiers[idDossier].categories[nomCat]) {
+        dossiers[idDossier].categories[nomCat] = {};
+      }
 
-      if (!dossiers[cleDossier].categories[catNom]) dossiers[cleDossier].categories[catNom] = {};
-      if (!dossiers[cleDossier].categories[catNom][examenCle]) dossiers[cleDossier].categories[catNom][examenCle] = [];
-      
-      dossiers[cleDossier].categories[catNom][examenCle].push(ligne);
-    });
+      // 2. REGROUPEMENT PAR SOUS-CATÉGORIE MÉDICALE
+      let section = ligne.sous_categories;
+      if (section && typeof section === "string") {
+        section = section.trim();
+      }
 
-    return Object.values(dossiers).filter(d => {
-        const nomComplet = `${d.infosPatient.nom || ""} ${d.infosPatient.prenom || ""}`.toLowerCase();
-        const matchNom = nomComplet.includes(search.toLowerCase());
-        let matchDate = true;
-        if (filterDate !== "" && d.infosPatient.date) {
-            const dateDossier = new Date(d.infosPatient.date).toISOString().split('T')[0];
-            matchDate = dateDossier === filterDate;
+      // Si la sous-catégorie est vide ou générique, on applique le dictionnaire intelligent
+      if (!section || section === "" || section.toLowerCase() === "autres" || section.toLowerCase().includes("visite")) {
+        const param = (ligne.nom_parametre || "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, ""); 
+
+        if (param.includes("cholest") || param.includes("ldl") || param.includes("hdl") || param.includes("trigly") || param.includes("lipid")) {
+          section = "BILAN LIPIDIQUE";
+        } else if (param.includes("creat") || param.includes("uree") || param.includes("renal") || param.includes("acide urique")) {
+          section = "BILAN LIPIDIQUE"; 
+        } else if (param.includes("glyc") || param.includes("gluc") || param.includes("hba1c") || param.includes("diabete")) {
+          section = "BILAN GLUCIDIQUE";
+        } else if (param.includes("tgo") || param.includes("tgp") || param.includes("asat") || param.includes("alat") || param.includes("hepat")) {
+          section = "BILAN HÉPATIQUE";
+        } else if (param.includes("iono") || param.includes("sod") || param.includes("potas") || param.includes("chlor")) {
+          section = "IONOGRAMME";
+        } else {
+          section = "AUTRES ANALYSES";
         }
-        return matchNom && matchDate;
-    });
-  }, [resultats, search, filterDate]);
+      } else {
+        section = section.toUpperCase();
+      }
 
-  // FONCTION D'IMPRESSION
-  const imprimerDossier = (idUnique) => {
-    setPrintingId(idUnique); // On définit quel patient imprimer
+      if (!dossiers[idDossier].categories[nomCat][section]) {
+        dossiers[idDossier].categories[nomCat][section] = [];
+      }
+
+      const existe = dossiers[idDossier].categories[nomCat][section].some(
+        (p) => p.nom_parametre === ligne.nom_parametre && p.valeur_resultat === ligne.valeur_resultat
+      );
+
+      if (!existe) {
+        dossiers[idDossier].categories[nomCat][section].push(ligne);
+      }
+    });
+
+    return Object.values(dossiers).filter((d) =>
+      `${d.patient.nom} ${d.patient.prenom}`.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [resultats, search]);
+
+  const imprimer = (id) => {
+    setPrintingId(id);
     setTimeout(() => {
       window.print();
-      setPrintingId(null); // On remet à zéro après l'impression
-    }, 100);
+      setPrintingId(null);
+    }, 300);
   };
 
   return (
     <div className="container mt-4">
       <style>{`
         @media print {
-          /* 1. Masquer tout ce qui n'est pas le dossier sélectionné */
-          .no-print, .card, .bg-light { display: none !important; }
-          
-          /* 2. Afficher uniquement le dossier en cours d'impression */
-          .print-section-${printingId} { 
-            display: block !important; 
-            width: 100% !important;
-            position: absolute;
-            top: 0;
-            left: 0;
-          }
-
-          /* 3. Forcer le rendu des tableaux */
-          table { width: 100% !important; border-collapse: collapse !important; }
-          th, td { border: 1px solid #000 !important; padding: 6px !important; font-size: 11px !important; }
-          
-          /* 4. En-tête spécifique à l'impression */
-          .print-header { display: flex !important; border-bottom: 2px solid #000; margin-bottom: 20px; padding-bottom: 10px; }
-          
-          @page { margin: 0.5cm; }
+          .no-print { display: none !important; }
+          .card { border: none !important; box-shadow: none !important; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+          th, td { border: 1px solid #dee2e6 !important; padding: 6px !important; font-size: 12px; }
+          @page { margin: 1.5cm; }
         }
-
-        /* Hors impression, on cache l'en-tête de document */
-        .print-header { display: none; }
       `}</style>
 
-      {/* Interface de filtrage (no-print) */}
-      <div className="d-flex justify-content-between align-items-center mb-4 bg-light p-3 rounded shadow-sm no-print">
-        <h4>📋 Gestion des Dossiers</h4>
-        <div className="d-flex gap-2 w-50">
-          <input type="date" className="form-control" onChange={(e) => setFilterDate(e.target.value)} />
-          <input type="text" className="form-control" placeholder="Nom du patient..." onChange={(e) => setSearch(e.target.value)} />
-        </div>
+      {/* Barre de recherche (Écran uniquement) */}
+      <div className="mb-4 no-print bg-white p-3 shadow-sm border rounded">
+        <input
+          type="text"
+          className="form-control"
+          placeholder="Rechercher un patient..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
-      {demandesGroupees.map((groupe, idx) => (
-        <div 
-          key={idx} 
-          className={`card mb-5 border-none ${printingId === groupe.idUnique ? `print-section-${groupe.idUnique}` : ''}`}
-        >
-          {/* HEADER CARTE (Visible à l'écran) */}
-          <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center no-print">
-            <div>
-              <strong className="text-uppercase">{groupe.infosPatient.nom} {groupe.infosPatient.prenom}</strong>
-              <span className="ms-3 small">📅 {new Date(groupe.infosPatient.date).toLocaleDateString()}</span>
+      {demandesGroupees.map((d) => (
+        <div key={d.idUnique} className={`card mb-5 ${printingId === d.idUnique ? "" : printingId ? "d-none" : ""}`}>
+          
+          {/* EN-TÊTE D'IMPRESSION MUTÉ DANS LA BOUCLE PATIENT */}
+          <div className="d-none d-print-block p-3">
+            <div className="row align-items-center border-bottom pb-3">
+              <div className="col-4">
+                <div className="d-flex">
+                  <img src={Logo} style={{ width: '80px' }} alt="Logo" />
+                  <h4 className="fw-bold mt-2 text-uppercase ms-2">destiny express</h4>
+                </div>
+                <p className="small mb-0">votre santé notre priorité</p>
+                <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
+              </div>
+              <div className="col-4 text-center">
+                <h2 className="text-uppercase fw-bold">Rapport</h2>
+              </div>
+              <div className="col-4 text-end">
+                <p className="mb-0">Date d'édition : {new Date().toLocaleDateString()}</p>
+                <p className="mb-0">Heure : {new Date().toLocaleTimeString()}</p>
+              </div>
             </div>
-            <button className="btn btn-sm btn-light fw-bold" onClick={() => imprimerDossier(groupe.idUnique)}>
-              🖨️ IMPRIMER CE DOSSIER
+
+            {/* BLOC INFOS PATIENT RAJOUTÉ ICI */}
+            <div className="row my-3 p-2 bg-light rounded border" style={{ fontSize: "14px" }}>
+              <div className="col-6">
+                <p className="mb-1"><strong>Nom & Prénom :</strong> {d.patient.nom} {d.patient.prenom}</p>
+                <p className="mb-0"><strong>Date de la demande :</strong> {d.patient.date ? new Date(d.patient.date).toLocaleDateString() : "-"}</p>
+              </div>
+              <div className="col-6 text-end">
+                <p className="mb-1"><strong>Âge :</strong> {d.patient.age || "-"} ans</p>
+                <p className="mb-0"><strong>Sexe :</strong> {d.patient.sexe || "-"}</p>
+              </div>
+            </div>
+
+            <h3 className="text-center mt-3 text-decoration-underline">SERVICE LABORATOIRE</h3>
+          </div>
+
+          <div className="card-header bg-primary text-white d-flex justify-content-between no-print">
+            <strong>{d.patient.nom} {d.patient.prenom}</strong>
+            <button className="btn btn-sm btn-light" onClick={() => imprimer(d.idUnique)}>
+              🖨️ Imprimer le rapport
             </button>
           </div>
 
-          {/* EN-TÊTE PROFESSIONNEL (Uniquement à l'impression) */}
-          <div className="print-header row align-items-center">
-            <div className="col-6">
-              <h4 className="fw-bold text-uppercase mb-0">destiny express</h4>
-              <p className="small mb-0">Laboratoire d'Analyses Médicales</p>
-              <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
-            </div>
-            <div className="col-6 text-end">
-              <h5 className="text-decoration-underline">RAPPORT D'EXAMENS</h5>
-              <p className="mb-0"><strong>Patient :</strong> {groupe.infosPatient.nom} {groupe.infosPatient.prenom}</p>
-              <p className="small mb-0">Date : {new Date(groupe.infosPatient.date).toLocaleString()}</p>
-            </div>
-          </div>
-          
-          <div className="card-body p-print-0">
-            {Object.entries(groupe.categories).map(([nomCat, examensDuGroupe], catIdx) => (
-              <div key={catIdx} className="mb-4 border rounded">
-                <h6 className="bg-dark text-white p-2 text-uppercase mb-0" style={{fontSize: '20px'}}>
-                  {nomCat}
-                </h6>
-                <div className="p-2">
-                  {Object.entries(examensDuGroupe).map(([nomExamen, lignes], exIdx) => {
-                    const isBio = lignes[0]?.est_biochimie === 'OUI';
-                    return (
-                      <div key={exIdx} className="mb-3">
-                        <div className="fw-bold border-bottom mb-1" style={{fontSize: '11px'}}>
-                          {nomExamen}
-                        </div>
-                        <table className="table table-sm table-bordered mb-0">
-                          <thead className="table-light">
-                            <tr style={{fontSize: '10px'}}>
-                              <th>Paramètre</th>
-                              <th>Résultat</th>
-                              {isBio ? <th>Normes</th> : <th>Interprétation</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lignes.map((l, lIdx) => (
-                              <tr key={lIdx} style={{fontSize: '11px'}}>
-                                <td>{l.nom_parametre}</td>
-                                <td className="fw-bold">{l.valeur_resultat}</td>
-                                <td>{isBio ? l.norme_reference : l.interpretation_sero}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })}
-                </div>
+          <div className="card-body">
+            {Object.entries(d.categories).map(([nomCat, sousCats]) => (
+              <div key={nomCat} className="mb-4">
+                {/* BLOC CATÉGORIE PRINCIPALE */}
+                <div className="bg-dark text-white p-2 mb-2 text-uppercase fw-bold text-center">DEPARTEMENT {nomCat}</div>
+
+                {/* LES SOUS-TABLEAUX SÉPARÉS */}
+                {Object.entries(sousCats).map(([nomSousCat, params]) => (
+                  <div key={nomSousCat} className="mt-4">
+                    <div className="border-start border-primary border-4 ps-2 fw-bold bg-light py-1 mb-2 text-uppercase">
+                      {nomSousCat}
+                    </div>
+                    
+                    <table className="table table-bordered table-sm">
+                      <thead className="table-light">
+                        <tr>
+                          <th style={{ width: "45%" }}>Analyse</th>
+                          <th className="text-center" style={{ width: "25%" }}>Résultat</th>
+                          <th className="text-center" style={{ width: "30%" }}>Normes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {params.map((p, i) => (
+                          <tr key={i}>
+                            <td className="align-middle">{p.nom_parametre}</td>
+                            <td className="text-center fw-bold align-middle" style={{ fontSize: "1.05rem" }}>
+                              {p.valeur_resultat || "-"}
+                            </td>
+                            <td className="text-center small text-muted align-middle">
+                              {p.norme_reference || "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-
-          {/* PIED DE PAGE IMPRESSION */}
-          <div className="d-none d-print-block mt-4">
-            <div className="d-flex justify-content-between">
-              <p className="small italic">Édité le {new Date().toLocaleDateString()}</p>
-              <div className="text-center">
-                <p className="mb-5 small fw-bold text-decoration-underline">Le Responsable du Laboratoire</p>
-                <div style={{height: '60px'}}></div>
-              </div>
-            </div>
-          </div>
-
         </div>
       ))}
     </div>
