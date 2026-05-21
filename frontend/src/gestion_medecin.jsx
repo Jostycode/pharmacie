@@ -14,7 +14,7 @@ import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
 import Caisse from "./pages/caisse";
 
-function Gestion() {
+function Gestion3() {
   const [activePage, setActivePage] = useState("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -79,7 +79,7 @@ function Gestion() {
             </button>
           </li>
 
-          <li>
+          {/* <li>
             <button
               onClick={() => setActivePage("patients")}
               className="nav-link text-white btn btn-link"
@@ -95,8 +95,8 @@ function Gestion() {
             >
               Examens
             </button>
-          </li>
-
+          </li> */}
+{/* 
           <li>
             <button
               onClick={() => setActivePage("parameteur")}
@@ -104,7 +104,7 @@ function Gestion() {
             >
               parameteur
             </button>
-          </li>
+          </li> */}
 
           <li>
             <button
@@ -182,4 +182,4 @@ function Gestion() {
   );
 }
 
-export default Gestion;
+export default Gestion3;

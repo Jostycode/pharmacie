@@ -9,8 +9,6 @@ function ResultatExamen() {
 
   const [selectedExamen, setSelectedExamen] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  
-  // Nouvel état pour gérer la date d'enregistrement/modification
   const [dateResultat, setDateResultat] = useState("");
 
   const [formData, setFormData] = useState({
@@ -28,11 +26,9 @@ function ResultatExamen() {
 
   const API_URL = "http://localhost:3000/api/resultats";
 
-  // Fonction utilitaire pour formater une date au format requis par <input type="datetime-local"> (YYYY-MM-DDTHH:mm)
   const formatForDateTimeLocal = (dateString) => {
     if (!dateString) return "";
     const d = new Date(dateString);
-    // Ajustement du décalage horaire local
     const tzoffset = d.getTimezoneOffset() * 60000; 
     const localISOTime = (new Date(d.getTime() - tzoffset)).toISOString().slice(0, 16);
     return localISOTime;
@@ -82,7 +78,7 @@ function ResultatExamen() {
       ]);
       setExamensEnAttente(attente.data);
       setHistorique(effectues.data);
-    } catch (err) { console.error("Erreur chargement:", err); }
+    } catch (err) { console.error("Erreur chargement:", err); alert("probleme de connexion internet");}
   }, [filtreDate, dateSelectionnee]);
 
   useEffect(() => {
@@ -92,24 +88,33 @@ function ResultatExamen() {
     refreshData();
   }, [refreshData]);
 
+  // --- AJUSTEMENT ICI : CORRESPONDANCE DES COLONNES LORS DE LA SÉLECTION ---
   const handleSelect = (examen) => {
     setIsEditing(false);
     setSelectedExamen(examen);
-    
-    // Par défaut, met l'instant présent pour une nouvelle saisie
     setDateResultat(formatForDateTimeLocal(new Date()));
     
     const categorie = examen.categorie ? examen.categorie.toUpperCase() : "";
     if (categorie.includes("BIOCHIMIE") || categorie.includes("HEMATOLOGIE")) {
-      let nomsParams = examen.parametre 
+      
+      // Séparation des paramètres
+      const nomsParams = examen.parametre 
         ? (examen.parametre.includes(';') ? examen.parametre.split(';') : examen.parametre.split(','))
         : [];
 
-      const newParams = nomsParams.map(p => ({
+      // Séparation des valeurs par défaut correspondantes
+      const valeursParams = examen.valeurs_defaut
+        ? (examen.valeurs_defaut.includes(';') ? examen.valeurs_defaut.split(';') : examen.valeurs_defaut.split(','))
+        : [];
+
+      // Reconstruction d'un tableau d'objets alignés par index
+      const newParams = nomsParams.map((p, index) => ({
         parametre: p.trim(),
         nom_parametre: p.trim(),
         resultat: "",
-        valeur: examen.valeurs_defaut || "-" 
+        // On prend la valeur de référence associée à l'index, sinon "-"
+        valeur: valeursParams[index] ? valeursParams[index].trim() : "-",
+        interpretation: ""
       }));
 
       setFormData({
@@ -133,7 +138,8 @@ function ResultatExamen() {
         parametre: p.parametre || p.nom_parametre,
         nom_parametre: p.parametre || p.nom_parametre,
         resultat: p.resultat,
-        valeur: p.valeur
+        valeur: p.valeur,
+        interpretation: p.interpretation
       }));
 
       const bioFormatte = {};
@@ -146,10 +152,10 @@ function ResultatExamen() {
         id_examen_reel: selectedExamen.id_examen_reel || selectedExamen.id_examen,
         categorie: selectedExamen.categorie,
         valide_par: currentUser.nom,
-        date_resultat: dateResultat, // Date modifiée envoyée au Backend
+        date_resultat: dateResultat, 
         bioData: bioFormatte, 
         seroData: formData.seroData,
-        parametres: parametresNettoyes 
+        parametres: parametresNettoyes // Contient maintenant les valeurs de référence modifiées ou initiales
       };
 
       if (isEditing) {
@@ -179,7 +185,6 @@ function ResultatExamen() {
         categorie: h.categorie
       });
 
-      // On injecte la date existante de l'archive dans le sélecteur de date
       setDateResultat(formatForDateTimeLocal(h.date_resultat));
 
       const res = await axios.get(`${API_URL}/details/${h.id_resultat}`);
@@ -205,7 +210,7 @@ function ResultatExamen() {
 
   const handleDelete = async (id) => {
     if (window.confirm("Voulez-vous vraiment supprimer ce résultat définitivement ?")) {
-      try { await axios.delete(`${API_URL}/${id}`); refreshData(); } catch (err) { alert("Erreur de suppression"); }
+      try { await axios.delete(`${API_URL}/${id}`); refreshData(); } catch (err) { alert("Erreur de suppression");  }
     }
   };
 
@@ -248,7 +253,7 @@ function ResultatExamen() {
                 </div>
                 <div className="col-6">
                   {filtreDateAttente === "precis" ? (
-                    <input type="date" className="form-control form-control-sm" onChange={(e) => setDateAttentePrecise(e.target.value)} />
+                    <input type="date" className="date form-control form-control-sm" onChange={(e) => setDateAttentePrecise(e.target.value)} />
                   ) : (
                     <input type="text" className="form-control form-control-sm" placeholder="🔍 Filtrer..." value={searchAttente} onChange={(e) => setSearchAttente(e.target.value)} />
                   )}
@@ -299,7 +304,6 @@ function ResultatExamen() {
                    👤 Opérateur : <strong>{currentUser?.nom || 'Non connecté'}</strong>
                 </div>
 
-                {/* --- AJOUT DU COMPOSANT SÉLECTEUR DE DATE INTERACTIF --- */}
                 <div className="row mb-3 p-2 bg-light rounded border mx-0">
                   <div className="col-md-6">
                     <label className="form-label fw-bold text-danger">📅 Date et Heure d'enregistrement</label>
@@ -310,11 +314,10 @@ function ResultatExamen() {
                       required
                       onChange={(e) => setDateResultat(e.target.value)}
                     />
-                    <small className="text-muted">Vous pouvez modifier cette valeur pour antidater ou postdater le résultat.</small>
                   </div>
                 </div>
 
-                {/* TABLEAU PARAMÈTRES BIOCHIMIE / HEMATOLOGIE */}
+                {/* TABLEAU PARAMÈTRES REAJUSTÉ */}
                 {(selectedExamen.categorie?.toUpperCase().includes("BIOCHIMIE") || selectedExamen.categorie?.toUpperCase().includes("HEMATOLOGIE")) && (
                   <div className="table-responsive">
                     <table className="table table-sm align-middle table-bordered">
@@ -337,6 +340,7 @@ function ResultatExamen() {
                               }}/>
                             </td>
                             <td>
+                              {/* Liaison directe avec l'index de valeurs_defaut */}
                               <input type="text" className="form-control form-control-sm" value={p.valeur || ""} onChange={(e) => {
                                 const newParams = [...formData.parametres];
                                 newParams[idx].valeur = e.target.value; 

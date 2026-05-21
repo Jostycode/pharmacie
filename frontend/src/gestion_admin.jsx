@@ -1,18 +1,21 @@
 import React, { useState } from "react";
 import PatientsCRUD from "./pages/patientsCRUD";
 import ExamenCRUD from "./pages/examensCRUD";
+import ExamenPrescription from "./pages/examens_prescription";
 import Consultation from "./pages/consultation";
 import DemandeMedecin from "./pages/DemandeMedecin";
 import LaboDemandes from "./pages/LaboDemandes";
 import Dashboard from "./pages/dashboard";
 import Abonnement from "./pages/abonnement";
 import Inscription from "./inscription";
+import Login from "./login";
 import Parameteur from "./pages/parameteur";
 
 import DemandeExamen1 from "./pages/DemandeExamen1";
 import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
 import Caisse from "./pages/caisse";
+import Inscription1 from "./inscription1";
 
 function Gestion1() {
   const [activePage, setActivePage] = useState("dashboard");
@@ -24,6 +27,10 @@ function Gestion1() {
         return <Dashboard />;
       case "utilisateurs":
         return <Inscription />;
+      case "utilisateurs1":
+        return <Inscription1 />;
+      case "login":
+        return <Login />;
       case "consultation":
         return <Consultation />;
       case "patients":
@@ -32,8 +39,11 @@ function Gestion1() {
         return <Parameteur />;
       case "examens":
         return <ExamenCRUD />;
+      case "examensprescription":
+        return <ExamenPrescription />;
       case "demande_medecin":
         return <DemandeMedecin />;
+
       case "demande_examen1":
         return <DemandeExamen1 />
       case " demande_labo":
@@ -61,12 +71,12 @@ function Gestion1() {
       </button>
 
       <div
-        className={`bg-dark text-white p-3 vh-100 ${
+        className={`sticky-top bg-dark text-white p-3 vh-100 ${
           isSidebarOpen ? "d-block" : "d-none"
         } d-md-block no-print`}
         style={{ width: "250px" }}
       >
-        <h4 className="text-center mb-3">Medsoft</h4>
+        <h4 className="text-center mb-3">LABO</h4>
 
         <ul className="nav flex-column">
           <li>
@@ -95,6 +105,14 @@ function Gestion1() {
               Examens
             </button>
           </li>
+          <li>
+            <button
+              onClick={() => setActivePage("examensprescription")}
+              className="nav-link text-white btn btn-link"
+            >
+              examens_prescription
+            </button>
+          </li>
 
           <li>
             <button
@@ -118,7 +136,7 @@ function Gestion1() {
               onClick={() => setActivePage("demande_examen1")}
               className="nav-link text-white btn btn-link"
             >
-              demande examen
+              demande examen1
             </button>
           </li>
           <li>
@@ -144,7 +162,7 @@ function Gestion1() {
               onClick={() => setActivePage("consultationResultats")}
               className="nav-link text-white btn btn-link"
             >
-              Liste resultat
+              consultation resultat
             </button>
           </li>
 
@@ -154,6 +172,15 @@ function Gestion1() {
               className="nav-link text-white btn btn-link"
             >
               Utilisateurs
+            </button>
+          </li>
+
+          <li>
+            <button
+              onClick={() => setActivePage("login")}
+              className="nav-link text-white btn btn-link"
+            >
+              Login
             </button>
           </li>
           <li>

@@ -14,6 +14,7 @@ function ListeResultatsGroupes() {
         setResultats(res.data);
       } catch (err) {
         console.error("Erreur de chargement dans le composant:", err);
+        alert("probleme de connexion internet");
       }
     };
     fetchData();

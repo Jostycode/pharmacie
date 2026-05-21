@@ -17,6 +17,7 @@ function Abonnement() {
             setData(response.data);
         } catch (error) {
             console.error("Erreur de chargement des données", error);
+            alert("probleme de connexion internet");
         }
     }, []);
 
@@ -78,7 +79,7 @@ function Abonnement() {
         setTelephone(a.telephone); 
         setEditId(a.id_abonnement);
     };
-
+    
     return (
         <div className="commentaire">
             <div className="container pt-5">

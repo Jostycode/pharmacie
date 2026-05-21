@@ -14,7 +14,7 @@ import ResultatExamen from "./pages/Resultat";
 import ListeResultatsGroupes from "./pages/consultationResultats";
 import Caisse from "./pages/caisse";
 
-function Gestion() {
+function Gestion2() {
   const [activePage, setActivePage] = useState("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -182,4 +182,4 @@ function Gestion() {
   );
 }
 
-export default Gestion;
+export default Gestion2;

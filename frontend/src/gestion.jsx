@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import PatientsCRUD from "./pages/patientsCRUD";
 import ExamenCRUD from "./pages/examensCRUD";
+import ExamenPrescription from "./pages/examens_prescription";
 import Consultation from "./pages/consultation";
 import DemandeMedecin from "./pages/DemandeMedecin";
 import LaboDemandes from "./pages/LaboDemandes";
@@ -38,6 +39,8 @@ function Gestion() {
         return <Parameteur />;
       case "examens":
         return <ExamenCRUD />;
+      case "examensprescription":
+        return <ExamenPrescription />;
       case "demande_medecin":
         return <DemandeMedecin />;
 
@@ -68,7 +71,7 @@ function Gestion() {
       </button>
 
       <div
-        className={`bg-dark text-white p-3 vh-100 ${
+        className={`sticky-top bg-dark text-white p-3 vh-100 ${
           isSidebarOpen ? "d-block" : "d-none"
         } d-md-block no-print`}
         style={{ width: "250px" }}
@@ -100,6 +103,14 @@ function Gestion() {
               className="nav-link text-white btn btn-link"
             >
               Examens
+            </button>
+          </li>
+          <li>
+            <button
+              onClick={() => setActivePage("examensprescription")}
+              className="nav-link text-white btn btn-link"
+            >
+              examens_prescription
             </button>
           </li>
 

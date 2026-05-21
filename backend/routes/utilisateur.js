@@ -6,13 +6,12 @@ router.post("/post", async (req, res) => {
 
   try {
     await pool.query(
-      `INSERT INTO inscription (nom, mdp, role)
-       VALUES ($1, $2, $3)`,
+      `INSERT INTO inscription (nom, mdp, role) VALUES ($1, $2, $3)`,
       [nom, mdp, role]
     );
-
     res.json({ message: "Utilisateur créé" });
   } catch (err) {
+    console.error("Détail de l'erreur SQL :", err); // <-- AJOUTE CECI POUR LIRE LE MESSAGE DANS TON TERMINAL NODE
     res.status(500).json({ error: err.message });
   }
 });
@@ -38,7 +37,7 @@ router.put("/:id", async (req, res) => {
         `UPDATE inscription 
          SET nom=$1, mdp=$2, role=$3  
          WHERE id_user=$4`,
-        [nom, role, mdp, id]
+        [nom, mdp, role, id] // <-- L'ordre est maintenant corrigé !
       );
     } else {
       await pool.query(

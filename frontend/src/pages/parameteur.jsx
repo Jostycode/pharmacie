@@ -23,6 +23,7 @@ function Parameteur() {
       setData(r.data);
     } catch (error) {
       console.error("Erreur parameteurs", error);
+      alert("probleme de connexion internet");
     }
   }, []);
 

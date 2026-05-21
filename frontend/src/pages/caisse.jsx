@@ -15,6 +15,7 @@ function Caisse() {
       setData(r.data);
     } catch (error) {
       console.error("Erreur chargement:", error.message);
+      alert("probleme de connexion internet");
     }
   }, []);
 
@@ -55,6 +56,7 @@ function Caisse() {
       return searchContent.includes(searchTerm.toLowerCase());
     }).sort((a, b) => new Date(b.date_creation) - new Date(a.date_creation));
   }, [data, searchTerm]);
+
 
   return (
     <div className="container mt-4">

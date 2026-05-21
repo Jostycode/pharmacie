@@ -29,6 +29,7 @@ app.use("/api/utilisateur", require("./routes/utilisateur"));
 app.use("/api/abonnement", require("./routes/abonnement"));
 app.use("/api/caisse", require("./routes/caisse"));
 app.use("/api/dashboard", require("./routes/dashboard"));
+app.use("/api/prescription", require("./routes/prescription"));
 // app.use("/api/connexion", require("./routes/auth"));
 
 server.listen(3000, () => console.log("Serveur lancé"));

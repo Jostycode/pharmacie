@@ -42,6 +42,7 @@ function PatientsCRUD() {
       setData(r.data);
     } catch (error) {
       console.error("Erreur patients", error);
+      alert("probleme de connexion internet");
     }
   }, []);
 
@@ -183,7 +184,7 @@ function PatientsCRUD() {
 
   const toggleArchive = async (id, actuelStatut) => {
 
-    if (!currentUser || currentUser.role !== "admin" ) {
+    if (!currentUser || currentUser.role !== "Admin" ) {
     alert("Accès refusé : Seul l'administrateur peut archiver un patient.");
     return;
     }
@@ -388,7 +389,7 @@ function PatientsCRUD() {
                 <td className="no-print">
                   <div className="d-flex align-items-center gap-2">
                     {/* LE SWITCH D'ARCHIVAGE */}
-                    {currentUser?.role === "admin" ? (
+                    {currentUser?.role === "Admin" ? (
                       <div className="form-check form-switch">
                         <input 
                           className="form-check-input" 
@@ -401,7 +402,7 @@ function PatientsCRUD() {
                       </div>
                     ) : (
                       // Optionnel : un petit cadenas ou rien du tout pour les non-admins
-                      <span title="Action réservée à l'administrateur">🔒</span>
+                      <span title="Action réservée à l'administrateur"></span>
                     )}
 
                     <div className="btn-group">

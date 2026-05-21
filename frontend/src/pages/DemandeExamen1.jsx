@@ -43,7 +43,7 @@ function DemandeExamen() {
       setPatients(resP.data);
       setExamensDispo(resE.data);
       setDemandes(resD.data);
-    } catch (err) { console.error("Erreur chargement", err); }
+    } catch (err) { console.error("Erreur chargement", err); alert("probleme de connexion internet");}
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -197,7 +197,7 @@ function DemandeExamen() {
       alert("Erreur lors de l'enregistrement : " + (err.response?.data?.error || err.message)); 
     }
   };
-
+  
   return (
     <div className="container mt-4 mb-5">
       <style>{`

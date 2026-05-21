@@ -26,6 +26,7 @@ function ExamenCRUD() {
       setData(r.data);
     } catch (error) {
       console.error("Erreur chargement examens", error);
+      alert("probleme de connexion internet");
     }
   }, []);
 
@@ -50,19 +51,12 @@ function ExamenCRUD() {
     return result;
   }, [data, searchTerm, filterCategorie, sortConfig]);
 
-  const categoriesExistantes = useMemo(() => {
-    return [...new Set(data.map(ex => ex.categorie))].filter(Boolean);
-  }, [data]);
-
   const handleSelectExamenForBilan = (ex) => {
     const isSelected = examensInclus.find(i => i.id_examen === ex.id_examen);
     if (isSelected) {
       setExamensInclus(prev => prev.filter(i => i.id_examen !== ex.id_examen));
     } else {
-      // RÉCUPÉRATION AUTOMATIQUE : On tire la sous-catégorie de l'examen lui-même
-      // Si l'examen a plusieurs sous-catégories (ex: "Bio, Urgences"), on prend la première
       const autoSubCat = ex.sous_categories ? ex.sous_categories.split(',')[0].trim() : "Général";
-      
       setExamensInclus(prev => [...prev, { 
         id_examen: ex.id_examen, 
         sous_cat: autoSubCat 
@@ -72,15 +66,44 @@ function ExamenCRUD() {
 
   const submit = async (e) => {
     e.preventDefault();
+
+    let finalParametre = "";
+    let finalValeursDefaut = "";
+    let finalResultat = "";
+
+    if (!isBilanMode) {
+      // 1. On sépare les paramètres pour connaître le nombre exact d'éléments attendus
+      const arrayParametres = parametre.split(',').map(p => p.trim()).filter(p => p !== "");
+      const totalParametres = arrayParametres.length;
+
+      if (totalParametres > 0) {
+        // 2. Fonction de secours pour aligner les autres champs (unités, valeurs par défaut)
+        const alignerChamps = (chaineBrute) => {
+          let chaineSeparee = chaineBrute.split(',').map(item => item.trim());
+          let tableauAligne = [];
+          
+          for (let i = 0; i < totalParametres; i++) {
+            // Si l'utilisateur n'a pas fourni assez de valeurs, on met du vide ""
+            tableauAligne.push(chaineSeparee[i] || "");
+          }
+          return tableauAligne.join(', ');
+        };
+
+        finalParametre = arrayParametres.join(', ');
+        finalValeursDefaut = alignerChamps(valeursDefaut);
+        finalResultat = alignerChamps(resultat);
+      }
+    }
+
     const payload = {
       nom_examen: nomExamen,
       categorie: isBilanMode ? "BILAN" : categorie,
-      parametre: isBilanMode ? "" : parametre,    
-      valeurs_defaut: isBilanMode ? "" : valeursDefaut,
-      sous_categories: isBilanMode ? "" : sousCategories, // Vide pour le bilan car porté par les examens inclus
+      parametre: finalParametre,    
+      valeurs_defaut: finalValeursDefaut,
+      sous_categories: isBilanMode ? "" : sousCategories,
       examens_inclus: isBilanMode ? examensInclus : [],
       prix: prix || 0,
-      resultat: isBilanMode ? "" : resultat
+      resultat: finalResultat
     };
 
     try {
@@ -109,11 +132,8 @@ function ExamenCRUD() {
     if (ex.categorie === 'BILAN') {
       setIsBilanMode(true);
       setCategorie("BILAN");
-      
       try {
-        // CHARGEMENT DE LA LISTE DES EXAMENS DU BILAN
         const res = await axios.get(`http://localhost:3000/api/examen/composition/${ex.id_examen}`);
-        // On remplit l'état avec ce qui vient de la base de données
         setExamensInclus(res.data); 
       } catch (error) {
         console.error("Erreur lors du chargement de la composition du bilan", error);
@@ -124,7 +144,6 @@ function ExamenCRUD() {
       setCategorie(ex.categorie);
       setExamensInclus([]);
     }
-    
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -237,7 +256,6 @@ function ExamenCRUD() {
         </div>
       </form>
 
-      {/* LISTE DU CATALOGUE (inchangée mais propre) */}
       <div className="table-responsive bg-white rounded shadow-sm border">
         <table className="table table-hover align-middle mb-0">
           <thead className="table-dark">

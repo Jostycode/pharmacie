@@ -7,8 +7,13 @@ function Consultation() {
     const [editId, setEditId] = useState(null); // ID pour le mode édition
 
     const loadconsultation = async () => {
-        const res = await axios.get("http://localhost:3000/api/consultation");
-        setconsultation(res.data);
+        try {
+            const res = await axios.get("http://localhost:3000/api/consultation");
+            setconsultation(res.data);
+        } catch (error) {
+            alert("probleme de connexion internet");
+        }
+        
     };
 
     useEffect(() => { loadconsultation(); }, []);

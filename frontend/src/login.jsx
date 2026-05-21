@@ -18,11 +18,11 @@ export default function Login() {
       sessionStorage.setItem("user", JSON.stringify(user));
 
       // Redirection selon rôle
-      if (user.role === "admin") navigate("/gestion_admin");
-      else if (user.role === "accueil") navigate("/gestion_reception");
-      else if (user.role === "medecin") navigate("/gestion_medecin");
-      else if (user.role === "labo") navigate("/gestion_labo");
-      else if (user.role === "proprio") navigate("/gestion");
+      if (user.role === "Admin") navigate("/admin");
+      else if (user.role === "Accueil") navigate("/reception");
+      else if (user.role === "Medecin") navigate("/medecin");
+      else if (user.role === "Labo") navigate("/labo");
+      else if (user.role === "Proprio") navigate("/gestion");
       
     } catch (error) {
       console.error("Erreur login:", error);

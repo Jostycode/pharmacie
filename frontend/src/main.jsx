@@ -1,59 +1,73 @@
 import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
 import ReactDOM from 'react-dom/client'
 import {
   createBrowserRouter,
   RouterProvider,
+  Navigate,
 } from "react-router-dom";
 import './index.css'
-import App from './App.jsx'
-import Inscription from './inscription.jsx'
-import Connexion from './Connexion.jsx'
-import Gestion from './Gestion.jsx'
-import Gestion1 from './gestion_admin.jsx'
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+// Vos imports de composants
+import Login from './login.jsx';
+import Gestion1 from './gestion_admin.jsx'; // Admin
+import Gestion from './gestion.jsx';        // Proprio / Global
+// Note : Assurez-vous que ces fichiers existent avec les bons noms
+import Gestion2 from './gestion_reception.jsx';      // Réception / Accueil
+import Gestion3 from './gestion_medecin.jsx';      // Médecin
+
+// Import du gardien de sécurité
+import ProtectedRoute from './ProtectedRoute.jsx';
 
 let router = createBrowserRouter([
   {
     path: "/",
-    element: <Gestion />,
-    // loader: loadRootData,
+    element: <Login />, // Page publique de connexion
   },
   {
-    path: "/gestion_admin",
-    element: <Gestion1 />,
-    // loader: loadRootData,
+    path: "/admin",
+    element: (
+      <ProtectedRoute allowedRoles={["Admin"]}>
+        <Gestion1 />
+      </ProtectedRoute>
+    ),
   },
   {
-    path: "/",
-    element: <Gestion />,
-    // loader: loadRootData,
+    path: "/reception",
+    element: (
+      <ProtectedRoute allowedRoles={["Accueil", "Admin"]}>
+        <Gestion2 />
+      </ProtectedRoute>
+    ),
   },
-  // {
-  //   path: "/urgence",
-  //   element: <Urgence />,
-  // },
-  // {
-  //   path: "/service",
-  //   element: <Service />,
-  // },
-  // {
-  //   path: "/apropos",
-  //   element: <Apropos />,
-  // },
-  // {
-  //   path: "/hospitalisation",
-  //   element: <Hospitalisation />,
-  // },
-  // {
-  //   path: "/contact",
-  //   element: <Contact />,
-  // },
+  {
+    path: "/medecin",
+    element: (
+      <ProtectedRoute allowedRoles={["Medecin", "Admin"]}>
+        <Gestion3 />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/gestion",
+    element: (
+      <ProtectedRoute allowedRoles={["Proprio", "Admin"]}>
+        <Gestion />
+      </ProtectedRoute>
+    ),
+  },
+  // Optionnel : Une route "Catch-all" si l'utilisateur tape n'importe quoi
+  {
+    path: "*",
+    element: <Navigate to="/" replace />,
+  }
 ]);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <RouterProvider router={router} />
+  <StrictMode>
+    <RouterProvider router={router} />
+  </StrictMode>
 );
-
 // createRoot(document.getElementById('root')).render(
 //   <StrictMode>
 //     <Gestion />

@@ -20,6 +20,7 @@ export default function Dashboard() {
   const labServicesCanvasRef = useRef(null);
   const serviceChartRef = useRef(null);
   const labServicesChartRef = useRef(null);
+  const [votreVariable, setVotreVariable] = useState(null);
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -105,6 +106,10 @@ export default function Dashboard() {
       default: return <Badge bg="info">{statut}</Badge>;
     }
   };
+
+  if (!data) {
+    return <div className="text-center p-5">Chargement...</div>;
+  }
 
   return (
     <Container fluid className="px-4 py-4" style={{ backgroundColor: "#f8fafc", minHeight: "100vh" }}>
