@@ -1,285 +1,544 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import axios from "axios";
 import socket from "../socket";
+import Logo from "../assets/logo.png"; // On réutilise ton logo pour l'en-tête de facture
+import { Modal } from 'bootstrap';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 function Caisse() {
-  const [data, setData] = useState([]);
+  const [produits, setProduits] = useState([]);
+  const [panier, setPanier] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterPeriod, setFilterPeriod] = useState("tous");
-  const [selectedPatient, setSelectedPatient] = useState(null);
-  const [montantSaisi, setMontantSaisi] = useState(0);
+  const [modePaiement, setModePaiement] = useState("ESPECES");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [structureInfo, setStructureInfo] = useState(null);
 
-  const loadCaisse = useCallback(async () => {
-    try {
-      const r = await axios.get("http://localhost:3000/api/caisse/");
-      setData(r.data);
-    } catch (error) {
-      console.error("Erreur chargement:", error.message);
-      alert("probleme de connexion internet");
+  // --- ÉTATS POUR L'HISTORIQUE ET LA FACTURE ---
+  const [ventesRecentes, setVentesRecentes] = useState([]);
+  const [venteSelectionnee, setVenteSelectionnee] = useState(null);
+
+  // Récupération de l'utilisateur et de la structure depuis le localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setCurrentUser(parsedUser);
+        
+        // Si les infos de la structure sont imbriquées dans l'objet utilisateur
+        if (parsedUser?.structure) {
+          setStructureInfo(parsedUser.structure);
+        }
+      } catch (e) {
+        console.error("Erreur de lecture du user", e);
+      }
+    }
+
+    // Alternative : Si vous stockez directement l'objet structure séparément
+    const storedStructure = localStorage.getItem("structure");
+    if (storedStructure) {
+      try {
+        setStructureInfo(JSON.parse(storedStructure));
+      } catch (e) {
+        console.error("Erreur de lecture de la structure", e);
+      }
     }
   }, []);
 
-  useEffect(() => {
-    loadCaisse();
-    socket.on("patients_updated", loadCaisse);
-    return () => socket.off("patients_updated", loadCaisse);
-  }, [loadCaisse]);
+  const getStructureId = useCallback(() => {
+    // Regarder directement dans le localStorage d'abord
+    const localId = localStorage.getItem("id_structure");
+    if (localId) return localId;
 
-  // Préparation du modal
-  // Dans ton composant Caisse, modifie ouvrirModal :
-  const ouvrirModal = (patient) => {
-    setSelectedPatient(patient);
-    // On propose par défaut de payer le RESTANT (montant_initial - deja_paye)
-    const restant = parseFloat(patient.montant_initial) - parseFloat(patient.deja_paye);
-    setMontantSaisi(restant > 0 ? restant : 0);
+    // Regarder dans l'état structureInfo chargé
+    if (structureInfo?.id_structure) return structureInfo.id_structure;
+
+    // Sinon, regarder subsidiairement dans l'objet user du localStorage
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        return parsed?.id_structure || parsed?.structure?.id_structure;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    
+    return currentUser?.id_structure;
+  }, [currentUser, structureInfo]);
+
+  const getAxiosConfig = useCallback(() => {
+    const idStructure = getStructureId();
+    if (!idStructure) return {};
+    return { headers: { "id_structure": idStructure } };
+  }, [getStructureId]);
+
+  // Chargement des produits
+  const loadProduits = useCallback(async () => {
+    const idStructure = getStructureId();
+    if (!idStructure) return;
+    try {
+      const r = await axios.get("http://192.168.100.34:3000/api/produit", getAxiosConfig());
+      setProduits(r.data);
+    } catch (error) {
+      console.error("Erreur chargement produits caisse", error);
+    }
+  }, [getStructureId, getAxiosConfig]);
+
+  // Chargement des ventes récentes
+  const loadVentesRecentes = useCallback(async () => {
+    const idStructure = getStructureId();
+    if (!idStructure) return;
+    try {
+      const r = await axios.get("http://192.168.100.34:3000/api/vente", getAxiosConfig());
+      setVentesRecentes(r.data);
+    } catch (error) {
+      console.error("Erreur chargement historique ventes", error);
+    }
+  }, [getStructureId, getAxiosConfig]);
+
+  useEffect(() => {
+    const idStructure = getStructureId();
+    if (!idStructure) return;
+
+    loadProduits();
+    loadVentesRecentes();
+
+    const handleRefresh = () => {
+      loadProduits();
+      loadVentesRecentes();
+    };
+    socket.on("refresh_data", handleRefresh);
+
+    return () => {
+      socket.off("refresh_data", handleRefresh);
+    };
+  }, [getStructureId, loadProduits, loadVentesRecentes]);
+
+  // --- RECHERCHE ET UTILS ---
+  const produitsFilitres = useMemo(() => {
+    if (!searchTerm) return [];
+    return produits.filter((p) =>
+      p.nom?.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 5);
+  }, [produits, searchTerm]);
+
+  // --- GESTION DU PANIER ---
+  const ajouterAuPanier = (produit) => {
+    const stockTotal = parseInt(produit.stock_total, 10);
+    if (stockTotal <= 0) {
+      alert("Ce produit est en rupture de stock !");
+      return;
+    }
+
+    setPanier((prevPanier) => {
+      const existe = prevPanier.find((item) => item.id_produit === produit.id_produit);
+      if (existe) {
+        if (existe.quantite_panier >= stockTotal) {
+          alert(`Impossible d'ajouter plus. Stock max disponible : ${stockTotal}`);
+          return prevPanier;
+        }
+        return prevPanier.map((item) =>
+          item.id_produit === produit.id_produit
+            ? { ...item, quantite_panier: item.quantite_panier + 1 }
+            : item
+        );
+      }
+      return [...prevPanier, { ...produit, quantite_panier: 1 }];
+    });
+    setSearchTerm("");
   };
 
-  // Modifie validerPaiement :
-  const validerPaiement = async () => {
-    if (!selectedPatient || montantSaisi <= 0) return;
-    
+  const changerQuantitePanier = (id_produit, nouvelleQuantite, stockTotal) => {
+    const qte = parseInt(nouvelleQuantite, 10);
+    if (isNaN(qte) || qte <= 0) return;
+
+    if (qte > parseInt(stockTotal, 10)) {
+      alert(`Le stock disponible est insuffisant (${stockTotal} max).`);
+      return;
+    }
+
+    setPanier((prev) =>
+      prev.map((item) =>
+        item.id_produit === id_produit ? { ...item, quantite_panier: qte } : item
+      )
+    );
+  };
+
+  const supprimerDuPanier = (id_produit) => {
+    setPanier((prev) => prev.filter((item) => item.id_produit !== id_produit));
+  };
+
+  const totalGeneral = useMemo(() => {
+    return panier.reduce(
+      (sum, item) => sum + parseFloat(item.prix_vente_unitaire) * item.quantite_panier,
+      0
+    );
+  }, [panier]);
+
+  // --- PREPARER L'IMPRESSION D'UNE FACTURE EXISTANTE ---
+  const handleOuvrirFacture = async (vente) => {
     try {
-      await axios.put(`http://localhost:3000/api/caisse/payer/${selectedPatient.id_patient}`, {
-        nouveau_versement: montantSaisi,
-        total_du: selectedPatient.montant_initial
+      const res = await axios.get(`http://192.168.100.34:3000/api/vente/details/${vente.id_vente}`, getAxiosConfig());
+      setVenteSelectionnee({
+        ...vente,
+        items: res.data
       });
-      loadCaisse();
+
+      const modalElement = document.getElementById("factureModal");
+      const modalInstance = new Modal(modalElement); 
+      modalInstance.show();
     } catch (error) {
-      console.error("Erreur paiement:", error);
+      console.error(error);
+      alert("Erreur lors de la récupération des détails de la facture.");
     }
   };
 
-  const filteredAndSortedData = useMemo(() => {
-    return data.filter((p) => {
-      if (parseFloat(p.total_a_payer) <= 0) return false;
-      const searchContent = `${p.nom} ${p.prenom}`.toLowerCase();
-      return searchContent.includes(searchTerm.toLowerCase());
-    }).sort((a, b) => new Date(b.date_creation) - new Date(a.date_creation));
-  }, [data, searchTerm]);
+  // --- SOUMISSION DE LA VENTE & IMPRESSION AUTO ---
+  const validerVente = async (e) => {
+    e.preventDefault();
+    const idStructure = getStructureId();
+    
+    if (!idStructure) {
+      return alert("Erreur : L'identifiant de la structure est introuvable. Veuillez vous reconnecter.");
+    }
+    if (panier.length === 0) return alert("Le panier est vide.");
 
+    const articles = panier.map((item) => ({
+      id_produit: item.id_produit,
+      quantite: item.quantite_panier,
+    }));
+
+    const payload = {
+      id_structure: idStructure, 
+      id_utilisateur: currentUser?.id_utilisateur,
+      mode_paiement: modePaiement,
+      articles,
+    };
+
+    try {
+      const resVente = await axios.post(
+        "http://192.168.100.34:3000/api/vente", 
+        payload, 
+        { headers: { "id_structure": idStructure } }
+      );
+      
+      alert("Vente enregistrée avec succès !");
+      
+      setPanier([]);
+      loadProduits();
+      loadVentesRecentes();
+
+      if (resVente.data && resVente.data.id_vente) {
+        const prepVenteObj = {
+          id_vente: resVente.data.id_vente,
+          total: resVente.data.total,
+          mode_paiement: resVente.data.mode_paiement || modePaiement,
+          date_vente: resVente.data.date_vente || new Date().toISOString()
+        };
+        handleOuvrirFacture(prepVenteObj);
+      }
+    } catch (error) {
+      alert("Erreur lors de la vente : " + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const handlePrintFacture = () => {
+    window.print();
+  };
 
   return (
     <div className="container mt-4">
-      <h3 className="mb-4 no-print">💰 Gestion de la Caisse</h3>
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .modal-print-content, .modal-print-content * {
+            visibility: visible;
+          }
+          .modal-print-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 0;
+            margin: 0;
+          }
+          .no-print-btn {
+            display: none !important;
+          }
+          @page {
+            margin: 0.5cm;
+          }
+        }
+      `}</style>
 
-      {/* ... (Filtres identiques à ton code précédent) */}
+      <h3 className="mb-4 no-print">Interface de Caisse</h3>
 
-      <div className="table-responsive shadow-sm no-print">
-        <table className="table table-bordered table-hover align-middle">
-          <thead className="table-dark text-center">
-            <tr>
-              <th>Nom du Patient</th>
-              <th>Montant Initial</th>
-              <th>Déjà Payé</th>
-              <th>Montant Restant</th>
-              <th className="no-print">Statut</th>
-              <th className="no-print">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAndSortedData.map((p) => (
-              <tr key={p.id_patient} className={p.statut_paye === 'avance' ? 'table-warning' : ''}>
-                <td className="fw-bold">
-                  {p.nom} {p.prenom}
-                  <div className="small text-muted">{p.telephone}</div>
-                </td>
-                
-                {/* MONTANT INITIAL */}
-                <td className="text-end fw-bold text-primary">
-                  {Number(p.montant_initial).toLocaleString()} FCFA
-                </td>
+      <div className="row no-print">
+        {/* Colonne de gauche : Recherche & Panier */}
+        <div className="col-md-8 mb-4">
+          <div className="card p-3 shadow-sm mb-3 position-relative">
+            <h5 className="card-title fw-bold">Recherche de médicaments</h5>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="🔍 Tapez le nom du produit..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
 
-                {/* DÉJÀ PAYÉ */}
-                <td className="text-end text-success">
-                  {Number(p.deja_paye).toLocaleString()} FCFA
-                </td>
-
-                {/* MONTANT RESTANT */}
-                <td className="text-end fw-bold text-danger bg-light">
-                  {Number(p.montant_restant).toLocaleString()} FCFA
-                </td>
-
-                <td className="text-center no-print">
-                  <span className={`badge ${p.statut_paye === 'avance' ? 'bg-warning text-dark' : 'bg-danger'}`}>
-                    {p.statut_paye.toUpperCase()}
-                  </span>
-                </td>
-
-                <td className="text-center no-print">
-                  <button 
-                    className="btn btn-sm btn-success shadow-sm" 
-                    data-bs-toggle="modal" 
-                    data-bs-target="#modalPaiement"
-                    onClick={() => ouvrirModal(p)}
+            {produitsFilitres.length > 0 && (
+              <ul className="list-group position-absolute left-0 w-100 shadow-lg" style={{ zIndex: 1000, top: "75px" }}>
+                {produitsFilitres.map((p) => (
+                  <button
+                    key={p.id_produit}
+                    type="button"
+                    className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                    onClick={() => ajouterAuPanier(p)}
                   >
-                    💵 Encaisser
+                    <span className="fw-bold">{p.nom}</span>
+                    <span>
+                      {parseFloat(p.prix_vente_unitaire).toLocaleString()} FCFA | Stock:{" "}
+                      <strong className={parseInt(p.stock_total, 10) <= 5 ? "text-danger" : "text-success"}>
+                        {p.stock_total}
+                      </strong>
+                    </span>
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Liste des articles dans le panier */}
+          <div className="card p-3 shadow-sm">
+            <h5 className="card-title fw-bold mb-3">Panier en cours</h5>
+            <div className="table-responsive">
+              <table className="table border align-middle">
+                <thead className="table-light">
+                  <tr>
+                    <th>Produit</th>
+                    <th>Prix</th>
+                    <th style={{ width: "120px" }}>Quantité</th>
+                    <th>Sous-total</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {panier.map((item) => (
+                    <tr key={item.id_produit}>
+                      <td className="fw-bold">{item.nom}</td>
+                      <td>{parseFloat(item.prix_vente_unitaire).toLocaleString()}</td>
+                      <td>
+                        <input
+                          type="number"
+                          className="form-control form-control-sm"
+                          value={item.quantite_panier}
+                          min="1"
+                          onChange={(e) => changerQuantitePanier(item.id_produit, e.target.value, item.stock_total)}
+                        />
+                      </td>
+                      <td className="fw-bold">
+                        {(parseFloat(item.prix_vente_unitaire) * item.quantite_panier).toLocaleString()}
+                      </td>
+                      <td>
+                        <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => supprimerDuPanier(item.id_produit)}>
+                          ❌
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {panier.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="text-center text-muted py-4">
+                        Le panier est vide. Scannez ou recherchez un produit pour commencer.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Colonne de droite : Total et Encaissement */}
+        <div className="col-md-4 mb-4">
+          <div className="card p-3 shadow-sm bg-dark text-white h-100 d-flex flex-column justify-content-between">
+            <div>
+              <h5 className="fw-bold text-uppercase text-muted border-bottom pb-2">Résumé Vente</h5>
+              <div className="my-4 text-center">
+                <span className="text-muted d-block small">TOTAL À PAYER</span>
+                <span className="display-5 fw-bold text-warning">{totalGeneral.toLocaleString()}</span>
+                <span className="ms-2 text-warning fw-bold">FCFA</span>
+              </div>
+
+              <div className="mb-4">
+                <label className="form-label small fw-bold text-muted">Mode de Règlement</label>
+                <select className="form-select bg-secondary text-white border-0" value={modePaiement} onChange={(e) => setModePaiement(e.target.value)}>
+                  <option value="ESPECES">💵 Espèces</option>
+                  <option value="MOBILE_MONEY">📱 Mobile Money</option>
+                  <option value="CARTE">💳 Carte Bancaire</option>
+                  <option value="CHEQUE">✍️ Chèque</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={validerVente}
+              disabled={panier.length === 0}
+              className="btn btn-warning btn-lg w-100 fw-bold mt-3 py-3 text-uppercase shadow"
+            >
+              🚀 Valider l'encaissement
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* MODAL DE PAIEMENT & REÇU */}
-      <div className="modal fade" id="modalPaiement" tabIndex="-1">
-        <div className="modal-dialog modal-dialog-scrollable modal-md">
-          <div className="modal-content border-0 shadow-lg">
-            {/* Header masqué à l'impression */}
-            <div className="modal-header bg-success text-white no-print">
-              <h5 className="modal-title">🧾 Encaissement : {selectedPatient?.nom}</h5>
-              <button type="button" className="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      {/* --- SECTION : HISTORIQUE DES VENTES --- */}
+      <div className="row mt-2 no-print">
+        <div className="col-12">
+          <div className="card p-3 shadow-sm">
+            <h5 className="card-title fw-bold text-secondary mb-3">📋 Ventes Récentes &amp; Impression Factures</h5>
+            <div className="table-responsive" style={{ maxHeight: "250px" }}>
+              <table className="table table-sm table-hover border align-middle mb-0">
+                <thead className="table-secondary sticky-top">
+                  <tr>
+                    <th>Date / Heure</th>
+                    <th>Réf Vente</th>
+                    <th>Mode</th>
+                    <th>Total</th>
+                    <th className="text-end">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventesRecentes.map((v) => (
+                    <tr key={v.id_vente}>
+                      <td>{v.date_vente ? new Date(v.date_vente).toLocaleString() : new Date().toLocaleDateString()}</td>
+                      <td className="small fw-bold text-uppercase">{v.id_vente ? `${v.id_vente.substring(0, 8)}...` : "---"}</td>
+                      <td><span className="badge bg-light text-dark border">{v.mode_paiement}</span></td>
+                      <td className="fw-bold text-primary">{parseFloat(v.total_somme || v.total || 0).toLocaleString()} FCFA</td>
+                      <td className="text-end">
+                        <button className="btn btn-sm btn-dark fw-bold" onClick={() => handleOuvrirFacture(v)}>
+                          🖨️ Facture
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {ventesRecentes.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="text-center text-muted py-3">Aucune vente enregistrée pour le moment.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* --- MODALE BOOTSTRAP : VISU ET EN-TETE DE LA FACTURE --- */}
+      <div className="modal fade" id="factureModal" tabIndex="-1" aria-labelledby="factureModalLabel" aria-hidden="true">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header no-print-btn">
+              <h5 className="modal-title fw-bold" id="factureModalLabel">📄 Aperçu Facture</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             
-            <div className="modal-body p-4" id="section-recu">
-              {selectedPatient && (
-                <>
-                  <style>{`
-                    @media print {
-                      .no-print { display: none !important; }
-                      .modal-content { border: none !important; box-shadow: none !important; }
-                      body { padding: 0; margin: 0; }
-                      
-                      /* 2. Réinitialiser le Body pour permettre le scroll sur plusieurs pages */
-                      body, html {
-                        height: auto !important;
-                        overflow: visible !important;
-                        position: static !important;
-                      }
-
-                      /* 3. Forcer le modal à prendre toute la place et à ne plus être "fixe" */
-                      .modal {
-                        position: absolute !important;
-                        left: 0 !important;
-                        top: 0 !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        overflow: visible !important;
-                        display: block !important; /* Force l'affichage même si JS essaie de le cacher */
-                      }
-
-                      .modal-dialog {
-                        max-width: 100% !important;
-                        width: 100% !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                      }
-
-                      .modal-content {
-                        border: none !important;
-                        box-shadow: none !important;
-                        overflow: visible !important;
-                      }
-
-                      /* 4. Ajustement des marges papier */
-                      @page {
-                        // margin: 1.5cm !important;
-                        margin: 0cm !important;
-                      }
-                    }
-                  `}</style>
-
-                  {/* EN-TÊTE DU REÇU */}
-                  <div className="text-center mb-4">
-                    <h3 className="fw-bold text-uppercase mb-0">DESTINY EXPRESS</h3>
-                    <p className="small mb-0">Laboratoire d'Analyses Médicales</p>
-                    <p className="small mb-0">Tél : +242 XX XXX XX XX</p>
-                    <h5 className="mt-3 border-bottom border-top py-2">REÇU DE CAISSE</h5>
+            <div className="modal-body modal-print-content">
+              {venteSelectionnee ? (
+                <div className="p-2 text-dark">
+                  {/* EN-TETE DE LA FACTURE ADAPTÉ AVEC LES INFOS DU LOCALSTORAGE */}
+                  <div className="text-center border-bottom pb-3 mb-3">
+                    {Logo && <img src={Logo} style={{ width: "55px" }} alt="Logo Structure" className="mb-2" />}
+                    
+                    <h5 className="fw-bold text-uppercase mb-1">
+                      {structureInfo?.nom || "PHARMACIE DE LA STRUCTURE"}
+                    </h5>
+                    
+                    {structureInfo?.raison_sociale && (
+                      <p className="small text-muted mb-0 fw-semibold">{structureInfo.raison_sociale}</p>
+                    )}
+                    
+                    <p className="small text-muted mb-0">
+                      {structureInfo?.adresse || "Gestion de Stock & Point de Vente Unifié"}
+                    </p>
+                    
+                    <p className="small text-muted mb-0">
+                      Tél: {structureInfo?.telephone || "(+242) XX XXX XX XX"}
+                    </p>
                   </div>
 
-                  <div className="mb-4">
-                    <p className="mb-1"><strong>Patient :</strong> {selectedPatient.nom} {selectedPatient.prenom}</p>
-                    <p className="mb-1"><strong>Date :</strong> {new Date().toLocaleDateString()}</p>
+                  {/* DETAILS DE LA VENTE */}
+                  <div className="row small mb-3">
+                    <div className="col-7">
+                      <strong>Facture N°:</strong> <span className="text-uppercase">{venteSelectionnee.id_vente?.substring(0, 13)}</span><br />
+                      <strong>Date:</strong> {venteSelectionnee.date_vente ? new Date(venteSelectionnee.date_vente).toLocaleString() : new Date().toLocaleString()}<br />
+                    </div>
+                    <div className="col-5 text-end">
+                      <strong>Règlement:</strong> {venteSelectionnee.mode_paiement}<br />
+                      <strong>Opérateur:</strong> {currentUser?.nom_utilisateur || currentUser?.nom || "Caissier"}
+                    </div>
                   </div>
 
-                  {/* TABLEAU DES DÉTAILS */}
-                  <table className="table table-sm border">
+                  {/* CORPS DE LA FACTURE */}
+                  <table className="table table-sm table-bordered align-middle small mb-3">
                     <thead className="table-light">
                       <tr>
-                        <th>Désignation</th>
-                        <th className="text-end">Prix (FCFA)</th>
+                        <th>Médicament</th>
+                        <th className="text-center">Qté</th>
+                        <th className="text-end">P.U</th>
+                        <th className="text-end">Total</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Ligne Consultation si prix > 0 */}
-                      {parseFloat(selectedPatient.prix_consultation) > 0 && (
-                        <tr>
-                          <td>Consultation</td>
-                          <td className="text-end">{Number(selectedPatient.prix_consultation).toLocaleString()}</td>
-                        </tr>
-                      )}
-                      {/* Liste des examens */}
-                      {selectedPatient.details_examens?.map((ex, i) => (
-                        <tr key={i}>
-                          <td>{ex.nom}</td>
-                          <td className="text-end">{Number(ex.prix).toLocaleString()}</td>
+                      {venteSelectionnee.items?.map((item, idx) => (
+                        <tr key={item.id_detail_vente || idx}>
+                          <td className="fw-bold">
+                            {item.nom_produit || "Médicament"} 
+                            {item.numero_lot && <span className="d-block text-muted style-small" style={{fontSize: '10px'}}>Lot: {item.numero_lot}</span>}
+                          </td>
+                          <td className="text-center">{item.quantite}</td>
+                          <td className="text-end">{parseFloat(item.prix_unitaire_vendu).toLocaleString()}</td>
+                          <td className="text-end fw-bold">
+                            {(parseInt(item.quantite, 10) * parseFloat(item.prix_unitaire_vendu)).toLocaleString()}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr className="fw-bold">
-                        <td>TOTAL GÉNÉRAL</td>
-                        <td className="text-end">{Number(selectedPatient.montant_initial).toLocaleString()}</td>
-                      </tr>
-                    </tfoot>
                   </table>
 
-                  {/* RÉSUMÉ FINANCIER */}
-                  <div className="mt-4 p-3 bg-light border rounded">
-                    <div className="d-flex justify-content-between mb-1">
-                      <span>Cumul déjà payé :</span>
-                      <span className="fw-bold">{Number(selectedPatient.deja_paye).toLocaleString()} FCFA</span>
-                    </div>
-
-                    {/* Saisie montant (masqué à l'impression) */}
-                    <div className="no-print my-3 py-2 border-top border-bottom">
-                      <label className="form-label fw-bold text-primary">Montant versé ce jour :</label>
-                      <div className="input-group">
-                        <input 
-                          type="number" 
-                          className="form-control form-control-lg fw-bold" 
-                          value={montantSaisi}
-                          onChange={(e) => setMontantSaisi(parseFloat(e.target.value) || 0)}
-                        />
-                        <span className="input-group-text">FCFA</span>
-                      </div>
-                    </div>
-
-                    {/* Montant versé affiché seulement à l'impression */}
-                    <div className="d-none d-print-block d-flex justify-content-between mb-1">
-                      <span>Versé ce jour :</span>
-                      <span className="fw-bold">{Number(montantSaisi).toLocaleString()} FCFA</span>
-                    </div>
-
-                    <div className="d-flex justify-content-between mt-2 pt-2 border-top">
-                      <span className="fw-bold">RESTE À PAYER :</span>
-                      <span className="fw-bold text-danger">
-                        {Math.max(0, (selectedPatient.montant_initial - selectedPatient.deja_paye - montantSaisi)).toLocaleString()} FCFA
+                  {/* NET A PAYER */}
+                  <div className="border-top pt-2 text-end">
+                    <h5 className="fw-bold">
+                      NET À PAYER :{" "}
+                      <span className="text-primary">
+                        {parseFloat(venteSelectionnee.total_somme || venteSelectionnee.total || venteSelectionnee.items?.reduce((s, i) => s + (i.quantite * i.prix_unitaire_vendu), 0) || 0).toLocaleString()} FCFA
                       </span>
-                    </div>
+                    </h5>
                   </div>
 
-                  <div className="mt-5 d-none d-print-block">
-                    <div className="d-flex justify-content-between">
-                      <p className="small">Le Caissier</p>
-                      <p className="small">Le Client</p>
-                    </div>
+                  <div className="text-center mt-4 pt-3 border-top small text-muted">
+                    <p className="mb-1">Merci pour votre confiance !</p>
+                    <p className="small">Les médicaments vendus ne sont ni repris ni échangés.</p>
                   </div>
-                </>
+                </div>
+              ) : (
+                <p className="text-center text-muted">Chargement de la facture...</p>
               )}
             </div>
 
-            <div className="modal-footer bg-light no-print">
-              <button className="btn btn-outline-dark" onClick={() => window.print()}>
-                🖨️ Imprimer Reçu
-              </button>
-              <button className="btn btn-success px-4" onClick={validerPaiement} data-bs-dismiss="modal">
-                ✅ Valider le Paiement
+            <div className="modal-footer no-print-btn bg-light">
+              <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+              <button type="button" className="btn btn-dark fw-bold" onClick={handlePrintFacture}>
+                🖨️ Lancer l'impression
               </button>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   );
 }

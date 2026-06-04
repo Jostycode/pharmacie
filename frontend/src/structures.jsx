@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import 'bootstrap/dist/css/bootstrap.min.css';
-// Désactive temporairement si socket n'est pas configuré sur ton module structures
-// import socket from './socket'; 
 
 function GestionStructures() {
     // États du CRUD
@@ -22,7 +20,7 @@ function GestionStructures() {
     // Charger la liste des structures
     const loadData = useCallback(async () => {
         try {
-            const response = await axios.get(`http://localhost:3000/api/structures`);
+            const response = await axios.get(`http://192.168.100.34:3000/api/structure`);
             setData(response.data);
         } catch (error) {
             console.error("Erreur de chargement des structures", error);
@@ -31,8 +29,6 @@ function GestionStructures() {
 
     useEffect(() => {
         loadData();
-        // Optionnel : socket.on('structures_updated', loadData);
-        // return () => { socket.off('structures_updated', loadData); };
     }, [loadData]);
 
     // Soumission CRUD (Ajout / Modification)
@@ -48,11 +44,11 @@ function GestionStructures() {
 
         try {
             if (editId) {
-                await axios.put(`http://localhost:3000/api/structures/${editId}`, formData);
+                await axios.put(`http://192.168.100.34:3000/api/structure/${editId}`, formData);
                 alert("Structure modifiée !");
             } else {
                 if (!mdp) { alert("Le mot de passe est obligatoire à la création"); return; }
-                await axios.post(`http://localhost:3000/api/structures/post`, formData);
+                await axios.post(`http://192.168.100.34:3000/api/structure/post`, formData);
                 alert("Structure créée !");
             }
             
@@ -66,7 +62,7 @@ function GestionStructures() {
             loadData();
         } catch (error) {
             console.error("Erreur lors de l'enregistrement", error);
-            alert("Erreur : " + error.response?.data?.error);
+            alert("Erreur : " + (error.response?.data?.error || error.message));
         }
     };
 
@@ -74,11 +70,12 @@ function GestionStructures() {
     const handleDelete = async (id) => {
         if (window.confirm("Voulez-vous vraiment supprimer cette structure ?")) {
             try {
-                await axios.delete(`http://localhost:3000/api/structures/${id}`);
+                await axios.delete(`http://192.168.100.34:3000/api/structure/${id}`);
                 if (currentStructureId === id) handleLogoutStructure(); // Déconnexion automatique si supprimée
                 loadData();
             } catch (error) {
                 console.error("Erreur lors de la suppression", error);
+                alert("Impossible de supprimer la structure.");
             }
         }
     };
@@ -90,14 +87,14 @@ function GestionStructures() {
         setAdresse(s.adresse || "");
         setTelephone(s.telephone || "");
         setMdp(""); // On laisse vide pour ne pas forcer le changement de mdp
-        setEditId(s.id);
+        setEditId(s.id_structure); // Correction ici : id_structure à la place de id
     };
 
     // Gestion du Login Structure & LocalStorage
     const handleLoginStructure = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post(`http://localhost:3000/api/structures/connexion`, {
+            const response = await axios.post(`http://192.168.100.34:3000/api/structure/connexion`, {
                 nom: loginNom,
                 mdp: loginMdp
             });
@@ -115,7 +112,7 @@ function GestionStructures() {
         }
     };
 
-    // Déconnexion de la structure (Nettoyage LocalStorage)
+    // Déconnexion de la structure
     const handleLogoutStructure = () => {
         localStorage.removeItem("id_structure");
         setCurrentStructureId(null);
@@ -127,7 +124,7 @@ function GestionStructures() {
             <div className="container">
                 <h1 className="text-center mb-5 fw-bold text-primary">Configuration Systèmes & Structures</h1>
 
-                {/* SECTION 1 : ÉTAT DU STOCKAGE LOCAL (Savoir où on est configuré) */}
+                {/* SECTION 1 : ÉTAT DU STOCKAGE LOCAL */}
                 <div className="alert alert-info d-flex justify-content-between align-items-center mb-4 shadow-sm">
                     <div>
                         <strong>Statut LocalStorage :</strong> {currentStructureId ? (
@@ -144,12 +141,12 @@ function GestionStructures() {
                 </div>
 
                 <div className="row g-4">
-                    {/* SECTION 2 : FORMULAIRE CRUD & FORMULAIRE LOGIN */}
+                    {/* SECTION 2 : FORMULAIRES CRUD & CONNEXION */}
                     <div className="col-lg-4">
-                        {/* CARD CRUD */}
+                        {/* FORMULAIRE CONFIGURATION */}
                         <div className="card p-4 shadow-sm mb-4 border-0">
                             <h3 className="h5 mb-3 text-secondary fw-bold">
-                                {editId ? "Modifier la Structure" : "Créer une Structure"}
+                                {editId ? "📝 Modifier la Structure" : "➕ Créer une Structure"}
                             </h3>
                             <form onSubmit={handleSubmit}>
                                 <div className="mb-2">
@@ -170,18 +167,41 @@ function GestionStructures() {
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label small mb-1">
-                                        Mot de passe {editId && <span className="text-muted text-xs">(laisser vide pour ne pas modifier)</span>}
+                                        Mot de passe {editId && <span className="text-muted" style={{fontSize: "0.75rem"}}>(laisser vide pour conserver)</span>}
                                     </label>
                                     <input type="password" className="form-control form-control-sm" value={mdp} onChange={(e) => setMdp(e.target.value)} />
                                 </div>
-                                <button className="btn btn-primary btn-sm w-100" type="submit">
-                                    {editId ? "Sauvegarder les modifications" : "Ajouter la structure"}
-                                </button>
+                                <div className="d-flex gap-2">
+                                    <button className="btn btn-primary btn-sm flex-grow-1" type="submit">
+                                        {editId ? "Sauvegarder" : "Ajouter la structure"}
+                                    </button>
+                                    {editId && (
+                                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setEditId(null); setNom(""); setRaisonSociale(""); setAdresse(""); setTelephone(""); setMdp(""); }}>
+                                            Annuler
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+                        </div>
+
+                        {/* FORMULAIRE IDENTIFICATION POSTE */}
+                        <div className="card p-4 shadow-sm border-0">
+                            <h3 className="h5 mb-3 text-dark fw-bold">🔑 Connexion de ce Navigateur</h3>
+                            <form onSubmit={handleLoginStructure}>
+                                <div className="mb-2">
+                                    <label className="form-label small mb-1">Nom Unique de Structure</label>
+                                    <input type="text" className="form-control form-control-sm" value={loginNom} onChange={(e) => setLoginNom(e.target.value)} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label small mb-1">Mot de passe</label>
+                                    <input type="password" className="form-control form-control-sm" value={loginMdp} onChange={(e) => setLoginMdp(e.target.value)} required />
+                                </div>
+                                <button className="btn btn-dark btn-sm w-100" type="submit">Identifier ce Terminal</button>
                             </form>
                         </div>
                     </div>
 
-                    {/* SECTION 3 : TABLEAU D'AFFICHAGE (Visibilité du Hash inclus) */}
+                    {/* SECTION 3 : TABLEAU REGISTRE */}
                     <div className="col-lg-8">
                         <div className="card p-4 shadow-sm border-0">
                             <h3 className="h5 mb-4 fw-bold text-success">Registre des Structures Cliniques</h3>
@@ -189,15 +209,19 @@ function GestionStructures() {
                                 <table className="table table-hover align-middle">
                                     <thead className="table-light">
                                         <tr style={{ fontSize: "0.85rem" }}>
+                                            <th>ID Structure</th>
                                             <th>Nom / Raison</th>
                                             <th>Contact / Adresse</th>
-                                            <th>Mot de passe (Haché en Base)</th>
+                                            <th>Empreinte Sécurisée (Hash)</th>
                                             <th className="text-end">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {data.map((s) => (
-                                            <tr key={s.id} style={{ fontSize: "0.9rem" }}>
+                                            <tr key={s.id_structure} style={{ fontSize: "0.9rem" }}>
+                                                <td>
+                                                    <code className="text-mutedsmall" style={{ fontSize: "0.75rem" }}>{s.id_structure}</code>
+                                                </td>
                                                 <td>
                                                     <div className="fw-bold">{s.nom}</div>
                                                     <small className="text-muted">{s.raison_sociale}</small>
@@ -207,20 +231,21 @@ function GestionStructures() {
                                                     <small className="text-muted d-block text-truncate" style={{ maxWidth: "150px" }}>{s.adresse || "Aucune"}</small>
                                                 </td>
                                                 <td>
-                                                    {/* Affichage du hash bcrypt directement dans le DOM */}
-                                                    <code className="text-break text-dark p-1 bg-light rounded border d-block style-code" style={{ fontSize: "0.75rem", maxWidth: "250px" }}>
-                                                        {s.mdp}
+                                                    <code className="text-break text-secondary p-1 bg-light rounded border d-block" style={{ fontSize: "0.7rem", maxWidth: "200px" }}>
+                                                        {s.mdp ? s.mdp.substring(0, 25) + "..." : "Aucun hash"}
                                                     </code>
                                                 </td>
                                                 <td className="text-end">
-                                                    <button onClick={() => handleEdit(s)} className="btn btn-xs btn-outline-warning me-1 btn-sm">Modifier</button>
-                                                    <button onClick={() => handleDelete(s.id)} className="btn btn-xs btn-outline-danger btn-sm">Supprimer</button>
+                                                    <div className="btn-group shadow-sm">
+                                                        <button onClick={() => handleEdit(s)} className="btn btn-outline-warning btn-sm">Modifier</button>
+                                                        <button onClick={() => handleDelete(s.id_structure)} className="btn btn-outline-danger btn-sm">Supprimer</button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
                                         {data.length === 0 && (
                                             <tr>
-                                                <td colSpan="4" className="text-center text-muted py-4">Aucune structure enregistrée.</td>
+                                                <td colSpan="5" className="text-center text-muted py-4">Aucune structure enregistrée.</td>
                                             </tr>
                                         )}
                                     </tbody>

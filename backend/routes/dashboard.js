@@ -1,133 +1,121 @@
-const express = require("express");
-const router = express.Router();
+const router = require("express").Router();
 const pool = require("../db");
 
 router.get("/stats", async (req, res) => {
+  const id_structure = req.headers["id_structure"] || req.query.id_structure;
+  const { startDate, endDate } = req.query;
+
+  if (!id_structure) {
+    return res.status(400).json({ error: "L'identifiant de la structure est requis." });
+  }
+
   try {
-    const { startDate, endDate } = req.query;
-    
-    const dateDeb = startDate ? `${startDate} 00:00:00` : '1970-01-01 00:00:00';
-    const dateFin = endDate ? `${endDate} 23:59:59` : '2099-12-31 23:59:59';
-    const params = [dateDeb, dateFin];
+    // 1. Calcul du Chiffre d'affaires global (filtré par date si spécifié)
+    let caQuery = `SELECT COALESCE(SUM(total_somme), 0) AS ca_jour FROM ventes WHERE id_structure = $1`;
+    let caParams = [id_structure];
 
-    // 1. KPI Globaux
-    const [totalPatientsRes, totalServicesRes, totalExamensRes] = await Promise.all([
-      pool.query("SELECT COUNT(*) AS total FROM patient WHERE date_creation BETWEEN $1 AND $2", params),
-      pool.query("SELECT COUNT(*) AS total FROM consultation WHERE est_actif = true"),
-      pool.query("SELECT COUNT(*) AS total FROM demande_examen WHERE date_demande BETWEEN $1 AND $2", params)
-    ]);
+    if (startDate && endDate) {
+      caQuery += ` AND date_vente::date BETWEEN $2 AND $3`;
+      caParams.push(startDate, endDate);
+    } else {
+      caQuery += ` AND date_vente::date = CURRENT_DATE`;
+    }
+    const caJrnRes = await pool.query(caQuery, caParams);
 
-    // 2. MODAL FILE D'ATTENTE PATIENTS (Avec décompte/index commençant à 1)
-    const fileAttenteDetails = await pool.query(`
+
+    // 1.B : Liste détaillée des articles vendus pour la modale
+    let detailVentesQuery = `
       SELECT 
-        ROW_NUMBER() OVER(ORDER BY date_creation DESC)::int AS index,
-        id_patient, nom, prenom, sexe, consultation, statut_paye, date_creation
-      FROM patient 
-      WHERE date_creation BETWEEN $1 AND $2
-    `, params).catch(() => ({ rows: [] }));
+        v.date_vente, 
+        v.mode_paiement, 
+        dv.quantite, 
+        dv.prix_unitaire_vendu, 
+        p.nom AS nom_produit
+      FROM details_vente dv
+      JOIN ventes v ON dv.id_vente = v.id_vente
+      JOIN produits p ON dv.id_produit = p.id_produit
+      WHERE v.id_structure = $1
+    `;
+    let detailVentesParams = [id_structure];
 
-    // 3. MODAL UNITÉS DE SOINS (Avec classement/décompte commençant à 1 basé sur l'activité)
-    const unitesActivesDetails = await pool.query(`
-      SELECT 
-        ROW_NUMBER() OVER(ORDER BY (SELECT COUNT(*) FROM patient p WHERE p.consultation = c.nom_consul AND p.date_creation BETWEEN $1 AND $2) DESC, c.nom_consul ASC)::int AS index,
-        c.id,
-        c.nom_consul,
-        c.prix,
-        c.est_actif,
-        COALESCE(
-          (SELECT d.medecin FROM demande_examen d
-           INNER JOIN patient pat ON d.id_patient = pat.id_patient
-           WHERE pat.consultation = c.nom_consul AND d.date_demande BETWEEN $1 AND $2
-           LIMIT 1), 
-          'Aucune demande'
-        ) AS medecin,
-        (SELECT COUNT(*)::int FROM patient p 
-         WHERE p.consultation = c.nom_consul 
-         AND p.date_creation BETWEEN $1 AND $2) AS consultations_effectuees,
-        (SELECT COUNT(d.id_demande)::int FROM demande_examen d
-         INNER JOIN patient pat ON d.id_patient = pat.id_patient
-         WHERE pat.consultation = c.nom_consul 
-         AND d.date_demande BETWEEN $1 AND $2) AS prescriptions_laboratoire
-      FROM consultation c
-      WHERE c.est_actif = true
-    `, params).catch((err) => {
-      console.error("Erreur Traçabilité Unités:", err);
-      return { rows: [] };
-    });
+    if (startDate && endDate) {
+      detailVentesQuery += ` AND v.date_vente::date BETWEEN $2 AND $3`;
+      detailVentesParams.push(startDate, endDate);
+    } else {
+      detailVentesQuery += ` AND v.date_vente::date = CURRENT_DATE`;
+    }
+    detailVentesQuery += ` ORDER BY v.date_vente DESC`;
+    const listeVentesDetailsRes = await pool.query(detailVentesQuery, detailVentesParams);
 
-    // 4. GRAPHIQUE 1 : Répartition des inscriptions
-    const servicesStats = await pool.query(`
-      SELECT consultation AS nom_consul, COUNT(*)::int AS nombre_patients
-      FROM patient WHERE date_creation BETWEEN $1 AND $2 AND consultation IS NOT NULL
-      GROUP BY consultation ORDER BY nombre_patients DESC
-    `, params).catch(() => ({ rows: [] }));
 
-    // 5. ONGLETS & LISTE DÉTAILLÉE DES ANALYSES LABO (Actives et Terminées)
-    const examensStatutsFins = await pool.query(`
-      SELECT 
-        COUNT(CASE WHEN statut IN ('nouveau', 'en_attente') THEN 1 END)::int AS actifs,
-        COUNT(CASE WHEN statut NOT IN ('nouveau', 'en_attente') THEN 1 END)::int AS non_actifs
-      FROM demande_examen WHERE date_demande BETWEEN $1 AND $2
-    `, params).catch(() => ({ rows: [{ actifs: 0, non_actifs: 0 }] }));
+    // 2. Ruptures de stock
+    const listeRupturesRes = await pool.query(
+      `SELECT p.nom 
+       FROM produits p
+       LEFT JOIN lots_stock l ON p.id_produit = l.id_produit AND l.date_peremption >= CURRENT_DATE
+       WHERE p.id_structure = $1
+       GROUP BY p.id_produit, p.nom
+       HAVING COALESCE(SUM(l.quantite_disponible), 0) = 0`,
+      [id_structure]
+    );
 
-    // Requête détaillée pour alimenter les deux nouvelles modals
-    const examensDetails = await pool.query(`
-      SELECT 
-        ROW_NUMBER() OVER(PARTITION BY (statut IN ('nouveau', 'en_attente')) ORDER BY d.date_demande DESC)::int AS index,
-        d.id_demande,
-        d.date_demande,
-        d.statut,
-        d.medecin,
-        p.nom,
-        p.prenom,
-        p.sexe,
-        COALESCE(p.consultation, 'Non spécifié') AS service_origine
-      FROM demande_examen d
-      LEFT JOIN patient p ON d.id_patient = p.id_patient
-      WHERE d.date_demande BETWEEN $1 AND $2
-    `, params).catch(() => ({ rows: [] }));
+    // 3. Lots critiques (CORRIGÉ : l.id_lot à la place de l.numero_lot)
+    const EastonCritiquesRes = await pool.query(
+      `SELECT l.id_lot, l.quantite_disponible, l.date_peremption, p.nom AS nom_produit
+       FROM lots_stock l
+       JOIN produits p ON l.id_produit = p.id_produit
+       WHERE l.id_structure = $1 AND l.quantite_disponible > 0 AND l.date_peremption <= CURRENT_DATE + INTERVAL '30 days'
+       ORDER BY l.date_peremption ASC`,
+      [id_structure]
+    );
 
-    // Filtrage des lignes pour scinder les examens selon leur état clinique
-    const examensActifsList = examensDetails.rows.filter(e => ['nouveau', 'en_attente'].includes(e.statut));
-    const examensInactifsList = examensDetails.rows.filter(e => !['nouveau', 'en_attente'].includes(e.statut));
+    // 4. Évolution du CA (sur 7 jours glissants)
+    let baseDate = "CURRENT_DATE";
+    if (endDate) baseDate = `'${endDate}'::date`;
 
-    // 6. GRAPHIQUE 2 : Nombre de demandes d'examens selon les services (Version sécurisée)
-    const demandesParService = await pool.query(`
-    SELECT 
-        CASE 
-        WHEN p.consultation IS NULL OR p.consultation = '' THEN 'Direct Labo / Non spécifié'
-        ELSE p.consultation 
-        END AS service_origine, 
-        COUNT(d.id_demande)::int AS total_demandes
-    FROM demande_examen d
-    LEFT JOIN patient p ON d.id_patient = p.id_patient
-    WHERE d.date_demande BETWEEN $1 AND $2
-    GROUP BY p.consultation
-    ORDER BY total_demandes DESC
-    `, params).catch((err) => {
-    console.error("Erreur Graphique 2:", err);
-    return { rows: [] };
-    });
+    const evolutionCaRes = await pool.query(
+      `SELECT 
+         jours.date AS date_vente,
+         COALESCE(SUM(v.total_somme), 0) AS total_ventes
+       FROM (
+         SELECT generate_series(${baseDate} - INTERVAL '6 days', ${baseDate}, '1 day')::date AS date
+       ) jours
+       LEFT JOIN ventes v ON v.date_vente::date = jours.date AND v.id_structure = $1
+       GROUP BY jours.date
+       ORDER BY jours.date ASC`,
+      [id_structure]
+    );
 
+    // 5. Top 5 des médicaments
+    const topVentesRes = await pool.query(
+      `SELECT p.nom, COALESCE(SUM(dv.quantite), 0)::int AS quantite_vendue
+       FROM details_vente dv
+       JOIN produits p ON dv.id_produit = p.id_produit
+       JOIN ventes v ON dv.id_vente = v.id_vente
+       WHERE v.id_structure = $1
+       GROUP BY p.id_produit, p.nom
+       ORDER BY quantite_vendue DESC
+       LIMIT 5`,
+      [id_structure]
+    );
+
+    // Retour des résultats au client
     res.json({
-      kpis: {
-        totalPatients: parseInt(totalPatientsRes.rows[0].total || 0),
-        totalServices: parseInt(totalServicesRes.rows[0].total || 0),
-        totalExamens: parseInt(totalExamensRes.rows[0].total || 0),
-        examensActifs: examensStatutsFins.rows[0].actifs || 0,
-        examensInactifs: examensStatutsFins.rows[0].non_actifs || 0
+      indicateurs: {
+        ca_aujourdhui: parseFloat(caJrnRes.rows[0].ca_jour),
+        produits_rupture: listeRupturesRes.rowCount,
+        lots_critiques: EastonCritiquesRes.rowCount
       },
-      fileAttente: fileAttenteDetails.rows,
-      unitesSoins: unitesActivesDetails.rows,
-      examensActifsList,      // <-- Nouvelle liste pour la modal active
-      examensInactifsList,    // <-- Nouvelle liste pour la modal terminée
-      services: servicesStats.rows,
-      demandesExamensServices: demandesParService.rows
+      liste_ventes_details: listeVentesDetailsRes.rows,
+      liste_ruptures: listeRupturesRes.rows,
+      liste_critiques: EastonCritiquesRes.rows,
+      evolution_ca: evolutionCaRes.rows,
+      top_ventes: topVentesRes.rows
     });
 
-  } catch (error) {
-    console.error("Erreur critique Dashboard:", error);
-    res.status(500).json({ error: "Erreur serveur lors du calcul des statistiques." });
+  } catch (err) {
+    console.error("Erreur GET Dashboard Stats:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -1,21 +1,10 @@
 import axios from "axios";
 
-const API = "http://localhost:3000/api/utilisateur";
-
-export const login = async (data) => {
-  const res = await axios.post(`${API}/connexion`, data);
-  localStorage.setItem("token", res.data.token);
-  localStorage.setItem("user", JSON.stringify(res.data.user));
-  return res.data.user;
+export const login = async ({ nom, mdp, id_structure }) => {
+  const response = await axios.post("http://192.168.100.34:3000/api/utilisateur/connexion", {
+    nom,
+    mdp,
+    id_structure // Requis par ton backend pour initialiser le filtre RLS Postgres
+  });
+  return response.data; // Renvoie { success: true, message, user }
 };
-
-export const logout = () => {
-  localStorage.clear();
-};
-
-export const getUser = () => {
-  const u = localStorage.getItem("user");
-  return u ? JSON.parse(u) : null;
-};
-
-export const isAuth = () => !!localStorage.getItem("token");

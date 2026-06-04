@@ -17,20 +17,11 @@ require("./socket")(io);
 app.set("socketio", io);
 
 // routes
-app.use("/api/patient", require("./routes/patient"));
-app.use("/api/parameteur", require("./routes/parameteur"));
-app.use("/api/consultation", require("./routes/consultation"));
-app.use("/api/examen", require("./routes/examens"));
-app.use("/api/demande", require("./routes/demande"));
-app.use("/api/demande_examen", require("./routes/demande"));
-app.use("/api/demande_examen1", require("./routes/demande_examen1"));
-app.use("/api/resultats", require("./routes/resultat"));
+app.use("/api/lots", require("./routes/lots"));
+app.use("/api/produit", require("./routes/produit"));
+app.use("/api/structure", require("./routes/structure"));
 app.use("/api/utilisateur", require("./routes/utilisateur"));
-app.use("/api/abonnement", require("./routes/abonnement"));
-app.use("/api/caisse", require("./routes/caisse"));
+app.use("/api/vente", require("./routes/vente"));
 app.use("/api/dashboard", require("./routes/dashboard"));
-app.use("/api/prescription", require("./routes/prescription"));
-app.use("/api/structures", require("./routes/structure"));
-// app.use("/api/connexion", require("./routes/auth"));
 
 server.listen(3000, () => console.log("Serveur lancé"));

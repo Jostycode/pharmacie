@@ -20,7 +20,7 @@ function AuthentificationUnique() {
     const handleInitialisationStructure = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post(`http://localhost:3000/api/structures/connexion`, {
+            const response = await axios.post(`http://192.168.100.34:3000/api/structure/connexion`, {
                 nom: nomStructure,
                 mdp: mdpSecurity
             });

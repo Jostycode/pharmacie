@@ -9,12 +9,9 @@ import './index.css'
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Vos imports de composants
+import AuthentificationUnique from './login1.jsx';
 import Login from './login.jsx';
-import Gestion1 from './gestion_admin.jsx'; // Admin
-import Gestion from './gestion.jsx';        // Proprio / Global
-// Note : Assurez-vous que ces fichiers existent avec les bons noms
-import Gestion2 from './gestion_reception.jsx';      // Réception / Accueil
-import Gestion3 from './gestion_medecin.jsx';      // Médecin
+import GestionPharmacie from './gestion.jsx';        // Proprio / Global
 
 // Import du gardien de sécurité
 import ProtectedRoute from './ProtectedRoute.jsx';
@@ -22,41 +19,18 @@ import ProtectedRoute from './ProtectedRoute.jsx';
 let router = createBrowserRouter([
   {
     path: "/",
-    element: <AuthentificationUnique />, // Page publique de connexion
-  },
-  {
-    path: "/admin",
-    element: (
-      <ProtectedRoute allowedRoles={["Admin"]}>
-        <Gestion1 />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: "/reception",
-    element: (
-      <ProtectedRoute allowedRoles={["Accueil", "Admin"]}>
-        <Gestion2 />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: "/medecin",
-    element: (
-      <ProtectedRoute allowedRoles={["Medecin", "Admin"]}>
-        <Gestion3 />
-      </ProtectedRoute>
-    ),
+    element: <AuthentificationUnique />,
+    // element: <GestionPharmacie />, // Page publique de connexion
   },
   {
     path: "/gestion",
     element: (
-      <ProtectedRoute allowedRoles={["Proprio", "Admin"]}>
-        <Gestion />
+      <ProtectedRoute >
+        <GestionPharmacie />
       </ProtectedRoute>
     ),
   },
-  // Optionnel : Une route "Catch-all" si l'utilisateur tape n'importe quoi
+
   {
     path: "*",
     element: <Navigate to="/" replace />,
