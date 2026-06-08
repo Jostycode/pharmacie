@@ -7,6 +7,7 @@ import Caisse from "./pages/caisse";
 import LotsStock from "./pages/lotStock"; 
 
 // --- IMPORTS CONFIGURATION & AUTHENTIFICATION ---
+import Abonnement from "./pages/abonnement";
 import Inscription from "./inscription";
 import Login from "./login";
 import AuthentificationUnique from "./login1";
@@ -41,6 +42,8 @@ function GestionPharmacie() {
         return ["admin", "pharmacien"].includes(userRole) ? <LotsStock /> : <Dashboard />;
       case "produits":
         return ["admin", "pharmacien"].includes(userRole) ? <ProduitsEtStock /> : <Dashboard />;
+      case "abonnement":
+        return ["admin"].includes(userRole) ? <Abonnement /> : <Dashboard />;
       case "utilisateurs":
         return userRole === "admin" ? <Inscription /> : <Dashboard />;
       case "structures":
@@ -156,6 +159,14 @@ function GestionPharmacie() {
                 {/* Filtré : Liens uniquement visibles pour l'Administrateur */}
                 {userRole === "admin" && (
                   <>
+                    <li>
+                      <button
+                        onClick={() => setActivePage("abonnement")}
+                        className={`nav-link w-100 text-start text-white-50 btn btn-sm border-0 py-1 ${activePage === "abonnement" ? "text-success fw-bold" : ""}`}
+                      >
+                        • Gestion d'abonnement (Admin)
+                      </button>
+                    </li>
                     <li>
                       <button
                         onClick={() => setActivePage("utilisateurs")}

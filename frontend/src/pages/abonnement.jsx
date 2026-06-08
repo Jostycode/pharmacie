@@ -11,6 +11,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 function Dashboard() {
   const [stats, setStats] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  
+  // --- NOUVEL ÉTAT POUR STOCKER LES ABONNÉS ISSUS DE L'API ---
+  const [listeAbonnes, setListeAbonnes] = useState([]);
 
   // --- ÉTATS POUR LES FILTRES D'INTERVALLE ---
   const [startDate, setStartDate] = useState("");
@@ -49,6 +52,7 @@ function Dashboard() {
     };
   }, [getStructureId, startDate, endDate]);
 
+  // --- 1. CHARGEMENT DES STATISTIQUES DU DASHBOARD ---
   const loadStats = useCallback(async () => {
     const idStructure = getStructureId();
     if (!idStructure) return;
@@ -60,34 +64,42 @@ function Dashboard() {
     }
   }, [getStructureId, getAxiosConfig]);
 
+  // --- 2. CHARGEMENT DE LA LISTE RÉELLE DES ABONNÉS DEPUIS VOTRE API ---
+  const loadAbonnes = useCallback(async () => {
+    const idStructure = getStructureId();
+    if (!idStructure) return;
+    try {
+      const response = await axios.get("http://192.168.100.34:3000/api/abonnement", getAxiosConfig());
+      // On s'assure que les données reçues sont bien un tableau
+      if (Array.isArray(response.data)) {
+        setListeAbonnes(response.data);
+      } else if (response.data && Array.isArray(response.data.abonnes)) {
+        setListeAbonnes(response.data.abonnes);
+      }
+    } catch (error) {
+      console.error("Erreur de chargement des abonnés", error);
+    }
+  }, [getStructureId, getAxiosConfig]);
+
+  // Déclenchement des chargements initiaux et lors des changements de filtres
   useEffect(() => {
     loadStats();
-  }, [loadStats]);
+    loadAbonnes();
+  }, [loadStats, loadAbonnes]);
 
+  // Écoute temps réel via Socket.io
   useEffect(() => {
     const idStructure = getStructureId();
     if (!idStructure) return;
 
-    const handleRefresh = () => loadStats();
+    const handleRefresh = () => {
+      loadStats();
+      loadAbonnes();
+    };
     socket.on("refresh_data", handleRefresh);
 
     return () => { socket.off("refresh_data", handleRefresh); };
-  }, [getStructureId, loadStats]);
-
-  // --- EXTRACTION DE LA LISTE DES ABONNÉS UNIQUES DEPUIS LES DONNÉES ---
-  const listeAbonnes = useMemo(() => {
-    if (!stats?.liste_ventes_details) return [];
-    const abonnesSet = new Set();
-    stats.liste_ventes_details.forEach(v => {
-      if (v.mode_paiement?.startsWith("ABONNEMENT_")) {
-        const nomAbonne = v.mode_paiement.replace("ABONNEMENT_", "");
-        if (nomAbonne.trim() !== "") {
-          abonnesSet.add(nomAbonne);
-        }
-      }
-    });
-    return Array.from(abonnesSet).sort();
-  }, [stats?.liste_ventes_details]);
+  }, [getStructureId, loadStats, loadAbonnes]);
 
   // Réinitialiser le sous-filtre abonné si le filtre principal change
   useEffect(() => {
@@ -105,9 +117,13 @@ function Dashboard() {
       if (filtrePaiement === "ABONNEMENT") {
         resultats = resultats.filter(v => v.mode_paiement?.startsWith("ABONNEMENT"));
         
-        // 2. Sous-filtrage par abonné spécifique s'il y a lieu
+        // 2. Sous-filtrage par abonné spécifique
         if (selectedAbonne !== "TOUS") {
-          resultats = resultats.filter(v => v.mode_paiement === `ABONNEMENT_${selectedAbonne}`);
+          // Gère à la fois si votre vente stocke "ABONNEMENT_Nom" ou juste le "Nom"
+          resultats = resultats.filter(v => 
+            v.mode_paiement === `ABONNEMENT_${selectedAbonne}` || 
+            v.nom_client === selectedAbonne
+          );
         }
       } else {
         resultats = resultats.filter(v => v.mode_paiement === filtrePaiement);
@@ -278,18 +294,22 @@ function Dashboard() {
                     <option value="ABONNEMENT">🔒 Abonnements (Tous)</option>
                   </select>
 
-                  {/* FILTRE SECONDAIRE POUR CHOISIR UN ABONNÉ (S'affiche uniquement si option abonnements activée) */}
+                  {/* FILTRE SECONDAIRE ALIMENTÉ PAR VOTRE ROUTE /API/ABONNEMENT */}
                   {filtrePaiement === "ABONNEMENT" && (
                     <select
-                      className="form-select form-select-sm border-0 shadow-sm no-print animate__animated animate__fadeIn"
+                      className="form-select form-select-sm border-0 shadow-sm no-print"
                       style={{ width: "230px", backgroundColor: "#fff3cd", fontWeight: "bold" }}
                       value={selectedAbonne}
                       onChange={(e) => setSelectedAbonne(e.target.value)}
                     >
-                      <option value="TOUS">👤 Tous les abonnés</option>
-                      {listeAbonnes.map((abonne, idx) => (
-                        <option key={idx} value={abonne}>👤 {abonne}</option>
-                      ))}
+                      <option value="TOUS">👤 Tous les abonnés ({listeAbonnes.length})</option>
+                      {listeAbonnes.map((abonne, idx) => {
+                        // S'adapte que votre objet soit un string direct ou un objet du type { nom: '...' }
+                        const nomUnique = abonne.nom || abonne.nom_complet || (typeof abonne === 'string' ? abonne : null);
+                        return nomUnique ? (
+                          <option key={idx} value={nomUnique}>👤 {nomUnique}</option>
+                        ) : null;
+                      })}
                     </select>
                   )}
                 </div>
@@ -297,7 +317,6 @@ function Dashboard() {
               </div>
 
               <div className="modal-body" style={{ maxHeight: '450px', overflowY: 'auto' }}>
-                {/* En-tête invisible à l'écran, visible uniquement à l'impression papier */}
                 <div className="d-none d-print-block mb-3 border-bottom pb-2">
                   <h4>
                     Rapport de Ventes — {

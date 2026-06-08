@@ -21,6 +21,7 @@ app.use("/api/lots", require("./routes/lots"));
 app.use("/api/produit", require("./routes/produit"));
 app.use("/api/structure", require("./routes/structure"));
 app.use("/api/utilisateur", require("./routes/utilisateur"));
+app.use("/api/abonnement", require("./routes/abonnement"));
 app.use("/api/vente", require("./routes/vente"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 

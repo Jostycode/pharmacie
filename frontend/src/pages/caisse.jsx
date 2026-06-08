@@ -12,6 +12,7 @@ function Caisse() {
   const [modePaiement, setModePaiement] = useState("ESPECES");
   const [currentUser, setCurrentUser] = useState(null);
   const [structureInfo, setStructureInfo] = useState(null);
+  const [abonnements, setAbonnements] = useState([]); // État pour stocker la liste des abonnements
 
   // --- ÉTATS POUR L'HISTORIQUE ET LA FACTURE ---
   const [ventesRecentes, setVentesRecentes] = useState([]);
@@ -97,23 +98,37 @@ function Caisse() {
     }
   }, [getStructureId, getAxiosConfig]);
 
+  // Chargement des abonnements (Intégré depuis votre code du bas)
+  const loadAbonnements = useCallback(async () => {
+    const idStructure = getStructureId();
+    if (!idStructure) return;
+    try {
+      const response = await axios.get("http://192.168.100.34:3000/api/abonnement", getAxiosConfig());
+      setAbonnements(response.data);
+    } catch (error) {
+      console.error("Erreur de chargement des abonnements", error);
+    }
+  }, [getStructureId, getAxiosConfig]);
+
   useEffect(() => {
     const idStructure = getStructureId();
     if (!idStructure) return;
 
     loadProduits();
     loadVentesRecentes();
+    loadAbonnements();
 
     const handleRefresh = () => {
       loadProduits();
       loadVentesRecentes();
+      loadAbonnements();
     };
     socket.on("refresh_data", handleRefresh);
 
     return () => {
       socket.off("refresh_data", handleRefresh);
     };
-  }, [getStructureId, loadProduits, loadVentesRecentes]);
+  }, [getStructureId, loadProduits, loadVentesRecentes, loadAbonnements]);
 
   // --- RECHERCHE ET UTILS ---
   const produitsFilitres = useMemo(() => {
@@ -380,6 +395,18 @@ function Caisse() {
                   <option value="MOBILE_MONEY">📱 Mobile Money</option>
                   <option value="CARTE">💳 Carte Bancaire</option>
                   <option value="CHEQUE">✍️ Chèque</option>
+                  
+                  {/* --- SECTION DES ABONNEMENTS RAJOUTÉE ICI --- */}
+                  <optgroup label="🔒 Abonnements">
+                    {abonnements.map((sub) => (
+                      <option key={sub.id_abonnement} value={`ABONNEMENT_${sub.id_abonnement}`}>
+                        👤 {sub.nom} ({sub.telephone || "Pas de tél"})
+                      </option>
+                    ))}
+                    {abonnements.length === 0 && (
+                      <option disabled>Aucun abonné actif</option>
+                    )}
+                  </optgroup>
                 </select>
               </div>
             </div>
