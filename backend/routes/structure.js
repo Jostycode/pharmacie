@@ -94,23 +94,49 @@ router.get("/", async (req, res) => {
 
 // --- 3. MODIFIER UNE STRUCTURE ---
 router.put("/:id", async (req, res) => {
-  const { id } = req.params;
+  const { id } = req.params; // C'est l'id_structure
   const { nom, raison_sociale, adresse, telephone, mdp, logo, date_expiration, actif } = req.body;
 
+  // On commence une connexion au pool pour gérer la transaction
+  const client = await pool.connect();
+
   try {
+    // Début de la transaction
+    await client.query("BEGIN");
+
     let result;
+
+    // Cas 1 : On demande à modifier le mot de passe
     if (mdp && mdp.trim() !== "") {
-      const sel = await bcrypt.genSalt(10);
-      const mdpHache = await bcrypt.hash(mdp, sel);
-      
-      result = await pool.query(
+      // Hachage du nouveau mot de passe pour la structure
+      const selStructure = await bcrypt.genSalt(10);
+      const mdpStructureHache = await bcrypt.hash(mdp, selStructure);
+
+      // Reconstruction et hachage du nouveau mot de passe pour le proprio (mdp + "159")
+      const mdpProprioBrut = `${mdp}159`;
+      const selProprio = await bcrypt.genSalt(10);
+      const mdpProprioHache = await bcrypt.hash(mdpProprioBrut, selProprio);
+
+      // 1. Mise à jour de la structure avec le mot de passe
+      result = await client.query(
         `UPDATE structures 
          SET nom = $1, raison_sociale = $2, adresse = $3, telephone = $4, mdp = $5, logo = $6, date_expiration = $7, actif = $8 
          WHERE id_structure = $9 RETURNING *`,
-        [nom, raison_sociale, adresse, telephone, mdpHache, logo, date_expiration, actif, id]
+        [nom, raison_sociale, adresse, telephone, mdpStructureHache, logo, date_expiration, actif, id]
       );
+
+      // 2. Mise à jour automatique du compte "proprio" lié à cette structure
+      // Le filtre s'assure qu'on vise le rôle proprio de cette structure exacte
+      await client.query(
+        `UPDATE utilisateurs 
+         SET mot_de_passe = $1 
+         WHERE id_structure = $2 AND LOWER(role) = 'proprio'`,
+        [mdpProprioHache, id]
+      );
+
     } else {
-      result = await pool.query(
+      // Cas 2 : Le mot de passe reste inchangé, on met à jour uniquement les autres champs
+      result = await client.query(
         `UPDATE structures 
          SET nom = $1, raison_sociale = $2, adresse = $3, telephone = $4, logo = $5, date_expiration = $6, actif = $7 
          WHERE id_structure = $8 RETURNING *`,
@@ -118,15 +144,26 @@ router.put("/:id", async (req, res) => {
       );
     }
 
+    // Si aucune ligne n'a été modifiée (la structure n'existe pas)
     if (result.rowCount === 0) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "Structure non trouvée" });
     }
 
+    // Tout s'est bien passé, on valide les modifications
+    await client.query("COMMIT");
+
     notifyRefresh(req);
-    res.json({ success: true, message: "Structure modifiée avec succès", structure: result.rows[0] });
+    res.json({ success: true, message: "Structure et compte propriétaire mis à jour avec succès", structure: result.rows[0] });
+
   } catch (err) {
+    // En cas de problème, on annule tout
+    await client.query("ROLLBACK");
     console.error("Erreur DB PUT Structure:", err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    // On libère le client du pool
+    client.release();
   }
 });
 
